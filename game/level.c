@@ -50,15 +50,21 @@ static uint8_t anim_gen[2];            /* per frame buffer: the animation step i
 static uint32_t anim_step;
 
 /* ------------------------------------------------------------------ the cart */
+/* homes[0..76]: the levels; homes[77 + n]: background picture n (R4, the moving background) */
+#define MAX_HOMES 96
 typedef struct { uint8_t area; uint16_t first, n, fid; uint32_t flen; } Home;
-static Home homes[NLEVELS];
-static uint8_t in_cart[NLEVELS];
-static int homes_read;
+static Home homes[MAX_HOMES];
+static uint8_t in_cart[MAX_HOMES];
+static int homes_read, n_homes;
 
 static void read_homes(void)
 {
-	const uint8_t *h = need("HOMES.BIN");
-	for (int i = 0; i < NLEVELS; i++, h += 12)
+	uint32_t size;
+	const uint8_t *h = (const uint8_t *)text_file("HOMES.BIN", &size);
+	if (size < 12 * NLEVELS) plat_fatal("HOMES.BIN: TOO SHORT");
+	n_homes = (int)(size / 12);
+	if (n_homes > MAX_HOMES) n_homes = MAX_HOMES;
+	for (int i = 0; i < n_homes; i++, h += 12)
 	{
 		homes[i].area = h[0];
 		homes[i].first = be16(h + 2); homes[i].n = be16(h + 4); homes[i].fid = be16(h + 6);
@@ -74,7 +80,13 @@ static uint32_t home_at(int li)
 
 static const uint8_t *pack_base(int li)
 {
-	if (homes[li].area == 0) return need("DEMO.PAK");
+	if (homes[li].area == 0)
+	{
+		if (li < NLEVELS) return need("DEMO.PAK");
+		static char name[16];
+		put_str(put_dec(put_str(name, "BACK"), (uint32_t)(li - NLEVELS), 1), ".PAK");
+		return need(name);
+	}
 	return plat_cart_ptr(home_at(li));
 }
 
@@ -95,11 +107,19 @@ static const uint8_t *pk_file(const uint8_t *base, const char *name, uint32_t *s
 	return 0;
 }
 
-int level_cached(int li)
+static int home_cached(int i)
 {
 	if (!homes_read) read_homes();
-	if (li < 0 || li >= NLEVELS) return 0;
-	return homes[li].area == 0 || in_cart[li];
+	if (i < 0 || i >= n_homes) return 0;
+	return homes[i].area == 0 || in_cart[i];
+}
+
+/* the level and the background picture it moves (R4) are both in the cart */
+int level_cached(int li)
+{
+	if (!home_cached(li)) return 0;
+	const int bg = level_back_index(li);
+	return bg < 0 || home_cached(bg);
 }
 
 /* the level's pieces from the disc to its home; the levels it overwrites are gone */

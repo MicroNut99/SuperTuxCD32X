@@ -23,9 +23,11 @@ never read: the disc seeks past them). game/level.c keeps track of what is in th
 level read once is there at once next time - the title's demo always, area A's always, area B's
 until other levels have used their room.
 
-HOMES.BIN (in IMAGE8.RAW): 77 x {area u8 (0 = in IMAGE8 as DEMO.PAK, 1 = A, 2 = B), pad u8,
-first piece u16, pieces u16, disc file u16 (9 = IMAGE9.RAW, 200 + nnn = OJnnn.PAK), file
-length u32}. Piece c of file 9 lands at 0x120000 + c x 32 KB, of OJ files at 0x280000 + c x 32 KB.
+HOMES.BIN (in IMAGE8.RAW): the 77 levels, then (R4) the background pictures, each {area u8
+(0 = in IMAGE8, 1 = A, 2 = B), a level's moving background u8 (picture + 1, 0 = none), first piece u16, pieces u16, disc file u16 (9 =
+IMAGE9.RAW, 200 + nnn = OJnnn.PAK), file length u32}. In IMAGE8 (area 0): the demo level as
+DEMO.PAK, its background as BACK<n>.PAK. A background's pack holds BACK.BIN: w u16, h u16, row
+length u16 (w + 16), pad u16, then the rows, each followed by its own first 16 pixels again. Piece c of file 9 lands at 0x120000 + c x 32 KB, of OJ files at 0x280000 + c x 32 KB.
 
 A LEVEL (each an OJPK pack, port/pack.h format, two files):
 
@@ -315,14 +317,34 @@ def main():
     # level, as far as it goes); area B a ring for the rest, in play order
     res_files = ["PALETTE.BIN", "TILES.BIN", "SPRITES.BIN", "FONTS.BIN", "PICS.BIN", "WMTILES.BIN", "WORLDS.BIN",
                  "NAMES.TXT", "INTRO.TXT", "EXTRO.TXT", "EXTRO1.TXT", "EXTRO2.TXT", "CREDITS.TXT"]
+    # R4: the background pictures for the moving background (game/yt_layers.c, SuperTux's
+    # bkgd_speed): 320 x 240, each row followed by its own first 16 pixels again (336 a row), so
+    # a 16-pixel slice never has to wrap. The title level's picture is resident; the others go
+    # first into area A (each read once, when a level first needs it).
+    nback = len(back)
+    back_packs = []
+    for px, cols, bw, bh in back:
+        rows = b"".join(px[y * bw:(y + 1) * bw] + px[y * bw:y * bw + TILE] for y in range(bh))
+        back_packs.append(make_pack([("BACK.BIN", struct.pack(">HHHH", bw, bh, bw + TILE, 0) + rows)]))
+    demo_bgi = struct.unpack(">H", rd("L%03d.BIN" % DEMO_LEVEL)[8:10])[0]
     resident = [(n, rd(n)) for n in res_files] + [("DEMO.PAK", packs[DEMO_LEVEL])]
-    homes = [None] * nlevels
+    if demo_bgi != 0xFFFF:
+        resident.append(("BACK%d.PAK" % demo_bgi, back_packs[demo_bgi]))
+    homes = [None] * (nlevels + nback)
+
+    # a level's moving background: picture index + 1 in the home's second byte (0: none - a
+    # gradient, or a picture that moves with the level)
+    def back_of(li):
+        lv = rd("L%03d.BIN" % li)
+        bgi, bspeed = struct.unpack(">H", lv[8:10])[0], struct.unpack(">H", lv[30:32])[0]
+        return 0 if bgi == 0xFFFF or bspeed == 100 else bgi + 1
+    level_backs = [back_of(li) for li in range(nlevels)]
 
     def homes_bin():
         b = bytearray()
-        for h in homes:
+        for i, h in enumerate(homes):
             area, first, n, fid, flen = h if h else (0, 0, 0, 0, 0)
-            b += struct.pack(">BBHHHI", area, 0, first, n, fid, flen)
+            b += struct.pack(">BBHHHI", area, level_backs[i] if i < nlevels else 0, first, n, fid, flen)
         return bytes(b)
     image8 = make_pack(resident + [("HOMES.BIN", homes_bin())])   # the size (HOMES.BIN's is fixed)
     a_first = (IMAGE8_AT + len(image8) + CHUNK - 1) // CHUNK * CHUNK
@@ -334,14 +356,18 @@ def main():
     image9 = bytearray()
     order = [i for i in range(nlevels) if i != DEMO_LEVEL]
     in_a = []
-    for li in order:                   # area A: world 1 from level 1 while it fits
-        n = pieces(len(packs[li]))
+    blobs = packs + back_packs         # entries nlevels + i: background i
+    a_order = [nlevels + i for i in range(nback) if i != demo_bgi] + order
+    if demo_bgi != 0xFFFF:
+        homes[nlevels + demo_bgi] = (0, 0, 0, 0, 0)
+    for li in a_order:                 # area A: the backgrounds, then world 1 from level 1 while it fits
+        n = pieces(len(blobs[li]))
         if a_at + n * CHUNK > AREA_A_END:
             break
         in_a.append(li)
         first = (a_at - AREA_A_SLOT * SLOT) // CHUNK
         image9 += b"\0" * (a_at - AREA_A_SLOT * SLOT - len(image9))
-        image9 += packs[li]
+        image9 += blobs[li]
         homes[li] = [1, first, n, AREA_A_SLOT, 0]
         a_at += n * CHUNK
     for li in in_a:
@@ -376,8 +402,12 @@ def main():
     open(os.path.join(out, "PACKS.TXT"), "w").write("\n".join(manifest) + "\n")
     print("  IMAGE8.RAW: %d bytes (%s, DEMO.PAK = the title's level %d bytes, HOMES.BIN)"
           % (len(image8), ", ".join(res_files), len(packs[DEMO_LEVEL])))
-    print("  area A (IMAGE9.RAW, kept once read): 0x%06X-0x%06X, levels %s" % (a_first, a_at, ", ".join(str(i + 1) for i in in_a)))
-    print("  area B (OJnnn.PAK, a ring of 0x%06X bytes): %d levels" % (b_size, len(order) - len(in_a)))
+    print("  area A (IMAGE9.RAW, kept once read): 0x%06X-0x%06X, backgrounds %s, levels %s"
+          % (a_first, a_at, ", ".join(str(i - nlevels) for i in in_a if i >= nlevels),
+             ", ".join(str(i + 1) for i in in_a if i < nlevels)))
+    print("  area B (OJnnn.PAK, a ring of 0x%06X bytes): %d levels" % (b_size, len([i for i in order if i not in in_a])))
+    if any(h is None for h in homes):
+        fail("not every level / background has a home: area A is too small for the backgrounds")
 
 
 if __name__ == "__main__":
