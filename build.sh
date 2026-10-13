@@ -1,5 +1,5 @@
 #!/bin/bash
-# SuperTux CD32X - builds the R1b disc (world 1's 26 levels, Tux walking, running, jumping).
+# SuperTux CD32X - builds the R1c disc (world 1's 26 levels, Tux walking, running, jumping).
 #
 # The steps are Hurrican CD32X's build (= the OpenJazz port's J19b, the last disc proven on the
 # console), with SuperTux's data in place of Hurrican's:
@@ -21,10 +21,10 @@ SRC="${SUPERTUX:-$HERE/SuperTux-0.1.3}"
 OUT="$HERE/build"
 ROMS="$HERE/cd32x/subcpu/ROMS"
 MARKER="SH2-OPENLARA-CD-OL1-LOADER"
-DISC=SuperTuxR1b
+DISC=SuperTuxR1c
 mkdir -p "$OUT" "$ROMS"
 
-echo "==> boot path check (must be Hurrican CD32X's, unchanged; diagnostics on)"
+echo "==> boot path check (must be Hurrican CD32X's, unchanged)"
 python3 "$HERE/tools/check_boot.py"
 python3 -c "import numpy, PIL" 2>/dev/null \
   || { echo "*** Python needs numpy and Pillow: sudo apt install python3-numpy python3-pil - stopping"; exit 1; }
@@ -55,7 +55,7 @@ echo "==> PC check (game/ on the PC: level 1, 300 frames, frames in build/host_f
 [ "${DATA_ONLY:-0}" = 1 ] && { echo "==> DATA_ONLY=1: stopping before the console build"; exit 0; }
 
 echo "==> engine";      rm -rf "$HERE/mars/obj"     # the switches are compiled into port/plat_mars.c
-                        make -C "$HERE/mars" EXTRA_DEFS="-DOJ32X_MUSIC=1 -DOJ32X_DIAG_TEXT=1"
+                        make -C "$HERE/mars" EXTRA_DEFS="-DOJ32X_MUSIC=1"
 [ -f "$HERE/mars/OPENJAZZ.32X" ] || { echo "*** mars/OPENJAZZ.32X was not made - stopping"; exit 1; }
 echo "==> ROM check";   python3 "$HERE/cd32x/ref/openlara/tools/prep_openlara_cd.py" "$HERE/mars/OPENJAZZ.32X" "$ROMS/OPENLARA.32X"
 echo "==> SH2 loader";  cd "$HERE/cd32x/sh2"    && make -f Makefile.cdloader clean && make -f Makefile.cdloader

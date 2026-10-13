@@ -21,8 +21,8 @@ on the 32X: it will look and play no better than on a PC, and the hardware force
   320 x 176 of level, a 24-line panel with the HUD and a timing line (frame rate, ms per part).
 - The music is SuperTux's, as CD audio; 12 of its sounds play on the Sega CD's PCM chip.
 - Not yet: enemies, bonus blocks, big Tux, animated tiles, the background's half-speed scroll.
-- The boot path is Hurrican CD32X's, unchanged, with every diagnostic line on (white and green
-  text from power-on until the game starts).
+- The boot path is Hurrican CD32X's, byte for byte (R1c: the diagnostics text is off again; the
+  SuperTux splash with "LOADING" and the progress bar shows from power-on until the game starts).
 
 `docs/R1B_NOTES.md` explains the screen, how Vic's tiler runs under this boot path and what to
 look for on the console. `build/previews/` shows every level as the 32X draws it.
@@ -39,7 +39,7 @@ port.
 
 The first run fetches SuperTux 0.1.3 (`tools/stx_fetch.sh`: tag v0.1.3 of
 github.com/SuperTux/supertux) into `SuperTux-0.1.3/`. Nothing of SuperTux is stored in this
-repository. The disc: `cd32x/subcpu/SuperTuxR1b.cue` (+ `.bin`) - ares or real hardware
+repository. The disc: `cd32x/subcpu/SuperTuxR1c.cue` (+ `.bin`) - ares or real hardware
 (Fusion cannot emulate the RAM cart). `DATA_ONLY=1 ./build.sh` stops after the data and the PC
 check.
 

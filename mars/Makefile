@@ -1,5 +1,5 @@
 # SuperTux CD32X - the SH2 program (R1b), linked as a 32X cartridge image for the CD32X loader.
-#   make -C mars EXTRA_DEFS="-DOJ32X_MUSIC=1 -DOJ32X_DIAG_TEXT=1"     (build.sh does this)
+#   make -C mars EXTRA_DEFS="-DOJ32X_MUSIC=1"     (build.sh does this)
 # Results: mars/stx32x.elf / .bin / .map, mars/OPENJAZZ.32X, mars/report.txt (sizes).
 #
 # Hurrican CD32X's mars/Makefile with game/ new. The start-up and platform layer are the
@@ -9,10 +9,10 @@
 # cartridge image (module name "OpenJazz 32X"; build.sh puts it on the disc as OPENLARA.32X).
 # The game (game/) runs after main() is called, after the boot path has finished.
 #
-# Switches passed by build.sh (both are the platform layer's own, no file is edited):
+# Switch passed by build.sh (the platform layer's own, no file is edited):
 #   OJ32X_MUSIC=1      CD audio tracks (the J19b music build)
-#   OJ32X_DIAG_TEXT=1  the Genesis text (Chilly's white lines, the Sub-CPU's green lines) stays
-#                      on until C++ start-up has worked (docs/STX_HANDOFF.md, diagnostics)
+#   (OJ32X_DIAG_TEXT=1 kept the Genesis text on until C++ start-up in the first builds; R1c is a
+#   release without it - docs/STX_HANDOFF.md, diagnostics)
 #
 # Vic's tiler (yatssd/, MIT, unchanged): dtiles.c, dsprite.c, draw.c, font.c, sh2_fixed.s.
 # Its hw_32x.c is NOT linked (it would set up the VDP, line table and interrupts - the boot

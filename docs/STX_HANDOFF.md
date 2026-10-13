@@ -24,8 +24,12 @@ screen; with the boot path byte for byte as the last proven disc, it booted): `c
 existing calls. `tools/check_boot.py` (run first by build.sh) compares every one of those files
 with `docs/BOOT_FILES.md5` (Hurrican's) and stops the build on any difference.
 
-**Diagnostics ON** (Micronut99: the Sega CD may not boot; without the text nothing can be
-diagnosed). Hurrican had them off (release). The documented switches, nothing else:
+**Diagnostics: ON for the first builds (R1a, R1b), OFF from R1c** (Micronut99 after R1b built
+and was ready to burn: "remove all the diags" - the splash with its loading bar does the job).
+R1c's boot path is Hurrican's byte for byte; `check_boot.py` prints "release". To turn the
+diagnostics on again (a disc that does not boot): change the four lines exactly as in
+`tools/check_boot.py` SWITCHES (the "here" lines) and add `-DOJ32X_DIAG_TEXT=1` to EXTRA_DEFS in
+build.sh - the check accepts either state. The switches (first builds on, R1c Hurrican's):
 
 | Switch | File | Hurrican | Here | Shows |
 |---|---|---|---|---|

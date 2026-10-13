@@ -1,5 +1,10 @@
 # R1b - the first disc: world 1, Tux, Vic's tiler
 
+**R1c** (after R1b built and was ready to burn): the diagnostics are off again - the boot path is
+Hurrican's byte for byte, no `-DOJ32X_DIAG_TEXT=1`; the splash has SuperTux's logo, "LOADING" in
+its gold letters and a panel around the boot path's progress bar (`tools/make_stx_splash.py`).
+The disc is `SuperTuxR1c.cue`. Everything else below is unchanged.
+
 ## What it does
 
 - The boot path is Hurrican CD32X's, unchanged. `tools/check_boot.py` passes: 70 files, with the 4
