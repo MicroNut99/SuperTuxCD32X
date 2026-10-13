@@ -1,0 +1,14 @@
+# SuperTux itself is fetched, not stored (tools/stx_fetch.sh)
+SuperTux-0.1.3/
+# build output
+build/
+build_log.txt
+*.o
+*.elf
+*.map
+cd32x/subcpu/ROMS/
+cd32x/subcpu/cd/
+cd32x/subcpu/*.iso
+cd32x/subcpu/*.bin
+cd32x/subcpu/*.cue
+discs/
