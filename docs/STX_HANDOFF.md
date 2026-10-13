@@ -35,9 +35,15 @@ diagnosed). Hurrican had them off (release). The documented switches, nothing el
 | `SCD_DIAG_TEXT` | `cd32x/subcpu/scd.c` | 0 | **1** | the green CKPT / INITCD lines and the CD error / root-directory lists |
 | `OJ32X_DIAG_TEXT` | `port/plat_mars.c` (build flag `-DOJ32X_DIAG_TEXT=1` in mars/, R1b) | 0 | **1** | the text stays until the engine's C++ start-up has worked |
 
-Not changed (part of the boot path): `cd32x/subcpu/hw_md.s` switches the Genesis display OFF at
-the end of the 68000's set-up (OL-13), so the white messages written before the SH2 loader runs
-are in video RAM but not visible until the loader's CMD 52 turns the display on.
+| Genesis display at the end of the 68000's set-up | `cd32x/subcpu/hw_md.s` `md_init_hw` | `0x8134` off (OL-13) | **`0x8174` on** | Chilly's white boot lines ("Activated 32X", "Cleared 32X", "32X Waiting", "CD BOOT TABLE" ...) from the very start, before the SH2 loader runs |
+
+**Why the white text is on (Micronut99):** for the first builds, so that a disc that stops
+early is not a black screen - the white lines show how far the boot got. Later builds turn it
+off again when the splash screen takes over that job: the splash is what tells the player the
+system is working while a slow boot loads. Not every game boots equally fast - timing and
+what the player sees while waiting matter (a black screen with no sign of life causes anxiety).
+For a release: `0x8134` here (OL-13) and the other switches back to Hurrican's values, with the
+splash on.
 
 ## Facts that shape the design
 

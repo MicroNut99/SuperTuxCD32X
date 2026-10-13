@@ -21,6 +21,9 @@ SWITCHES = {
          b"#define OJ_DIAG_TEXT 0")],
     "cd32x/subcpu/main.c": [
         (b"#define KOBO_DIAG_TEXT        1 ", b"#define KOBO_DIAG_TEXT        0 ")],
+    "cd32x/subcpu/hw_md.s": [
+        (b"        move.w  #0x8174,(a4)            | SuperTux CD32X first builds: display ON - Chilly's white boot text visible (OL-13 had 0x8134 = off)",
+         b"        move.w  #0x8134,(a4)            | OL-13: display OFF (V-int on) - no white boot text")],
     "cd32x/subcpu/scd.c": [
         (b"#define SCD_DIAG_TEXT 1   /* SuperTux CD32X: diagnostics ON (was 0 in Hurrican) */",
          b"#define SCD_DIAG_TEXT 0")],
