@@ -44,8 +44,14 @@ PORT_CFLAGS   := -std=gnu11 $(PORT_OPT) $(PORT_DEFS) $(PORT_INCS) -w -MMD -MP
 
 # ---- the game (new): speed-optimised, the same switches ----
 GAME_CFLAGS := -std=gnu11 $(ARCH) -O2 -ffunction-sections -fdata-sections $(PORT_DEFS) $(PORT_INCS) -I$(YT) -I$(GAME) -Wall -MMD -MP
-# ---- Vic's files: as they are (their own warnings are not ours to fix) ----
-YT_CFLAGS   := -std=gnu11 $(ARCH) -O2 -fdata-sections -I$(YT) -w -MMD -MP
+# ---- Vic's files: as they are (their own warnings are not ours to fix), with YATSSD's own
+# "release" flags (yatssd/Makefile, without -flto). -fno-align-loops / -jumps / -labels are
+# REQUIRED: his drawing functions live in .data (they run from SDRAM), where the assembler pads
+# an alignment with 0x0000 instead of NOPs - the CPU runs into it: R1c's red screen "ILLEGAL
+# INSTRUCTION, PC 06000A26" (draw_handle_layercmd). tools/check_sdram_code.py checks the result.
+YT_CFLAGS   := -std=gnu11 $(ARCH) -Os -fomit-frame-pointer -ffast-math -funroll-loops \
+               -fno-align-loops -fno-align-jumps -fno-align-labels -ffunction-sections -fdata-sections \
+               -D__32X__ -DMARS -I$(YT) -w -MMD -MP
 
 PORT_OBJS := $(OBJDIR)/plat_mars.o $(OBJDIR)/mars_syscalls.o $(OBJDIR)/pack.o $(OBJDIR)/mars_boottest.o
 GAME_OBJS := $(OBJDIR)/stx.o $(OBJDIR)/yt_layers.o $(OBJDIR)/yt_mars.o
@@ -65,6 +71,7 @@ stx32x.bin: stx32x.elf
 	$(TC)objcopy -O binary -j .sdcode -j .data -j .text $< $@
 
 OPENJAZZ.32X: stx32x.elf stx32x.bin $(ROOT)/tools/make_oj_rom.py $(ROOT)/tools/mars_boot.bin
+	python3 $(ROOT)/tools/check_sdram_code.py stx32x.elf $(TC)objdump
 	python3 $(ROOT)/tools/make_oj_rom.py $(ROOT)/tools/mars_boot.bin stx32x.elf stx32x.bin $@
 
 report.txt: stx32x.elf

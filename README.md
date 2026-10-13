@@ -39,7 +39,7 @@ port.
 
 The first run fetches SuperTux 0.1.3 (`tools/stx_fetch.sh`: tag v0.1.3 of
 github.com/SuperTux/supertux) into `SuperTux-0.1.3/`. Nothing of SuperTux is stored in this
-repository. The disc: `cd32x/subcpu/SuperTuxR1c.cue` (+ `.bin`) - ares or real hardware
+repository. The disc: `cd32x/subcpu/SuperTuxR1d.cue` (+ `.bin`) - ares or real hardware
 (Fusion cannot emulate the RAM cart). `DATA_ONLY=1 ./build.sh` stops after the data and the PC
 check.
 

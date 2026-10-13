@@ -3,7 +3,19 @@
 **R1c** (after R1b built and was ready to burn): the diagnostics are off again - the boot path is
 Hurrican's byte for byte, no `-DOJ32X_DIAG_TEXT=1`; the splash has SuperTux's logo, "LOADING" in
 its gold letters and a panel around the boot path's progress bar (`tools/make_stx_splash.py`).
-The disc is `SuperTuxR1c.cue`. Everything else below is unchanged.
+The disc was `SuperTuxR1c.cue`.
+
+**R1d** - R1c on the console (first hardware test): the splash, the music (faint), then the red
+error screen "SH2 EXCEPTION - ILLEGAL INSTRUCTION, PC 06000A26, PR 060008B4, last log MAIN()".
+06000A26 is inside Vic's `draw_handle_layercmd`: a `0x0000` word in the middle of the function.
+YATSSD puts its drawing functions in `.data` (they run from SDRAM); gcc at -O2 aligns loop
+starts with `.align`, and in a `.data` section the assembler pads with zeros instead of NOPs -
+the CPU runs into the padding on the first tile layer. Vic builds with `-fno-align-loops
+-fno-align-jumps -fno-align-labels` (yatssd/Makefile "release"); mars/Makefile now builds his
+files with his release flags, and `tools/check_sdram_code.py` (run by mars/Makefile) stops the
+build if any SDRAM function still contains padding it can fall into - it finds 06000A26 in the
+R1c program. The music tracks are now normalised to a peak of 0.70 (they peaked at 0.16-0.22:
+faint). Disc: `SuperTuxR1d.cue`. Everything else below is unchanged.
 
 ## What it does
 
