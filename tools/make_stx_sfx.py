@@ -16,10 +16,12 @@ import struct
 import sys
 
 RATE, MAX_SECS, RAM, PAGE, TAIL = 5000, 0.8, 65536, 256, 16
-# the game's sound numbers (game/stx.c SFX_*): plat_sfx(n) plays SOUNDS[n - 1]
+# the game's sound numbers (game/stx.h SFX_*): plat_sfx(n) plays SOUNDS[n - 1]
 # (the Sub-CPU looks up map[n - 1], cd32x/subcpu/main.c OL-6)
 SOUNDS = ["jump.wav", "skid.wav", "distro.wav", "lifeup.wav", "hurt.wav", "bigjump.wav",
-          "stomp.wav", "squish.wav", "kick.wav", "brick.wav", "bump-upgrade.wav", "fall.wav"]
+          "stomp.wav", "squish.wav", "kick.wav", "brick.wav", "bump-upgrade.wav", "fall.wav",
+          "excellent.wav", "coffee.wav", "herring.wav", "upgrade.wav", "shoot.wav", "explode.wav",
+          "ricochet.wav", "warp.wav"]
 # each sound is normalised to the same peak (as Hurrican's); the music is rendered 10 dB lower
 # (tools/stx_music.sh) so the sound effects are heard over it
 VOLUME, PEAK = 140, 0.9

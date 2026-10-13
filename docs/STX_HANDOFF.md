@@ -125,10 +125,26 @@ Previews checked: all 77 levels draw (tiles, backgrounds, gradients, objects mar
 - Checked on the PC (`host/`, frames looked at, address/UB checkers with random input) and
   compiled + linked for the SH2 here; not yet run on the console.
 
+## R1c-R1f
+
+The splash, music levels, the menus and extras of the other ports, options from the pause
+(docs/R1B_NOTES.md has a section for each).
+
+## R2 - the whole game (docs/R2_NOTES.md)
+
+- Micronut99: "build out the entire game, don't leave anything out"; size: **"Sharpened"** (half
+  size + unsharp mask) - chosen over 3/4 after the 3/4 data was made.
+- `game/stx.c` is replaced by seven files (`game/stx.h` lists them): title with demo, slots,
+  world maps, all 77 levels with every bad guy and power-up, texts, high scores, saves.
+- Screen layout unchanged from R1 (yt.h); `yt_mark_tile` added for animated tiles.
+- `tools/stx_convert.py` / `stx_pack.py` rewritten (all levels, world maps, sprites, fonts,
+  pictures, texts); PALETTE.BIN now holds entry 0 too (R2's first data had every colour one off).
+- Saves: bytes 3072-3439 of the backup RAM file ("STX2").
+
 ## Next
 
-1. R1b on the console (ares / real hardware): boot, first picture, timing line, music.
-2. Then, by what the timing line shows: the background at half speed (SuperTux's bkgd_speed 50)
-   - on the Genesis planes at the very end (68000 side, as Hurrican and Tyrian plan), or as a
-   separate layer on the 32X; animated tiles; enemies (snowball, mriceblock, ... - the objects
-   are already in Lnnn.BIN); bonus blocks and bricks; big Tux.
+1. R2 on the console: boot, title (the demo's speed), a world map, a level with snow (timing
+   line: F, T, S), a level read (2-7 s), saving and loading a slot.
+2. By what the timing line shows: fewer snowflakes, the background at half speed (on the
+   Genesis planes at the very end, 68000 side, as Hurrican and Tyrian plan), the slave SH2
+   drawing half the tiles.

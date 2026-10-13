@@ -1,12 +1,13 @@
 /*
  * SuperTux CD32X - the PC stand-in for port/plat_mars.c (the J19b calls the game uses), for
- * checking the game on the PC: the same game/stx.c and game/yt_layers.c, two 128 KB "frame
+ * checking the game on the PC: the same game files and game/yt_layers.c, two 128 KB "frame
  * buffers", the line table read back the way the 32X reads it (view lines, then the panel,
  * the 1-pixel shift), frames saved as PPM pictures. Taken from Hurrican CD32X's game/host.c.
  *
  *   ST_DIR=<folder with IMAGE8.RAW and OJnnn.PAK>  ST_OUT=<folder for frames>
  *   ST_FRAMES=<stop after n frames>  ST_SAVE_EVERY=<n>  ST_MS=<ms per frame, default 50>
- *   ST_LEVEL=<level index, 0 = world 1 level 1>
+ *   ST_LEVEL=<level index, 0 = world 1 level 1> (else the title)  ST_MAP=<world map 0-2>
+ *   ST_X=<units: Tux's x when a level starts>
  *   ST_PAD="frame:BUTTONS,..."  (UP DOWN LEFT RIGHT A B C X Y Z START, joined with +; "-" = none)
  *   ST_LOG=1  sound effects and music in the log
  */

@@ -180,3 +180,15 @@ void yt_screen(void)
 	window_canvas_x = window_canvas_y = 0;
 	yt_invalidate();
 }
+
+/* the cell of world tile (tx, ty) redrawn in this buffer (R2: animated tiles - Vic's dirty matrix
+ * compares tile numbers, and an animated tile keeps its number while its picture changes) */
+void yt_mark_tile(int tx, int ty)
+{
+	/* the canvas cell that holds world tile (tx, ty) now: as draw_tile_layer numbers them */
+	const int top_hor = (int)tm.scroll_tiles_hor * (cam_x / (int)tm.scroll_interval_hor);
+	const int top_ver = (int)tm.scroll_tiles_ver * (cam_y / (int)tm.scroll_interval_ver);
+	const int cx = tx - top_hor, cy = ty - top_ver;
+	if (cx < 0 || cy < 0 || cx >= (int)tm.canvas_tiles_hor || cy >= (int)tm.canvas_tiles_ver) return;
+	yt_extrafb()[3 + cy * (int)tm.canvas_tiles_hor + cx] = -1;
+}

@@ -1,5 +1,7 @@
 #!/bin/bash
-# SuperTux CD32X - builds the R1f disc (world 1's 26 levels, Tux walking, running, jumping).
+# SuperTux CD32X - builds the R2 disc: the whole of SuperTux 0.1.3 (Icyisland's 26 levels, both
+# Bonus Islands, the title with its demo, world maps, bad guys, power-ups, saves), half size,
+# sharpened.
 #
 # The steps are Hurrican CD32X's build (= the OpenJazz port's J19b, the last disc proven on the
 # console), with SuperTux's data in place of Hurrican's:
@@ -21,7 +23,7 @@ SRC="${SUPERTUX:-$HERE/SuperTux-0.1.3}"
 OUT="$HERE/build"
 ROMS="$HERE/cd32x/subcpu/ROMS"
 MARKER="SH2-OPENLARA-CD-OL1-LOADER"
-DISC=SuperTuxR1f
+DISC=SuperTuxR2
 mkdir -p "$OUT" "$ROMS"
 
 echo "==> boot path check (must be Hurrican CD32X's, unchanged)"
@@ -50,7 +52,7 @@ echo "==> music (CD audio tracks 2-13)"
 echo "==> PC check (game/ on the PC: level 1, 300 frames, frames in build/host_frames)"
                         make -C "$HERE/host" > /dev/null
                         rm -rf "$OUT/host_frames"; mkdir -p "$OUT/host_frames"
-                        ST_DIR="$ROMS" ST_OUT="$OUT/host_frames" ST_FRAMES=300 ST_SAVE_EVERY=30 \
+                        ST_LEVEL=0 ST_DIR="$ROMS" ST_OUT="$OUT/host_frames" ST_FRAMES=300 ST_SAVE_EVERY=30 \
                           ST_PAD="0:-,10:RIGHT,60:RIGHT+C,80:RIGHT,140:RIGHT+B,170:RIGHT+B+C,190:RIGHT+B" "$HERE/host/stx_host"
 [ "${DATA_ONLY:-0}" = 1 ] && { echo "==> DATA_ONLY=1: stopping before the console build"; exit 0; }
 
@@ -67,7 +69,7 @@ grep -a -q "$MARKER" "$ISO" || { echo "*** the disc does NOT contain the loader 
 for f in APP.BIN CDLOADER.BIN OPENLARA.32X IMAGE.RAW IMAGE8.RAW SFX00.BIN; do
   [ -f "$HERE/cd32x/subcpu/cd/$f" ] || { echo "*** $f is not on the disc - stopping"; exit 1; }
 done
-for n in $(seq -f "%03g" 1 26); do
+for n in $(seq -f "%03g" 1 77); do        # OJ001-OJ077: the 77 levels (tools/stx_pack.py)
   [ -f "$HERE/cd32x/subcpu/cd/OJ$n.PAK" ] || { echo "*** OJ$n.PAK is not on the disc - stopping"; exit 1; }
 done
 NAME="$(dd if="$HERE/cd32x/subcpu/cd/OPENLARA.32X" bs=1 skip=$((0x3C0)) count=8 2>/dev/null)"

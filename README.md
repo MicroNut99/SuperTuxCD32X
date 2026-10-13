@@ -12,23 +12,29 @@ game from source code and data that are already available. SuperTux gains nothin
 on the 32X: it will look and play no better than on a PC, and the hardware forces small losses
 (half resolution, 256 colours, keyed edges instead of soft ones, no floating point).
 
-## Status: R1b - the first disc (not yet run on the console)
+## Status: R2 - the whole game (not yet run on the console)
 
-- World 1's 26 levels; small Tux walks, runs (B), skids and jumps (C or A) with SuperTux 0.1.3's
-  own rules (rebuilt in fixed point, at its own 100 steps a second); coins, lives, time, the level
-  end and the next level; score, high scores (kept in the Sega CD's backup RAM).
-- Menus as in the other CD32X ports: title, options (start level, lives, music, timing line,
-  button layout, controls, story, high scores, credits with a music player), pause (continue,
-  restart, options - the same page, level choice included -, main menu, timing, music), SuperTux's story and ending texts.
+- **All of SuperTux 0.1.3**: the title with its demo level running behind the menu; five save
+  slots; Icyisland's world map and its 26 levels; Bonus Island I and II (50 more levels, their
+  own maps and saves); the story, the three endings and the credits; high scores.
+- Tux small, big and fire (shooting), ducking, running, skidding, ice; bonus boxes (coins, eggs,
+  ice flowers, herrings, 1-ups), bricks, coins; all eleven bad guys (Mr. Iceblock to kick and
+  carry, Mr. Bomb, Jumpy, the stalactite, the flame, the fish, Spiky, three snowballs);
+  animated tiles, snow and clouds, hurry-up music, reset points, the end sequence.
+- **Half size, sharpened** (Micronut99's choice from four test pictures): the view is SuperTux's
+  whole width, 352 of its 480 lines, with the camera following Tux up and down.
+- Menus of the other CD32X ports: options (music, lives, timing line, A/B jump, controls,
+  story, high scores, credits with a music player), pause (continue, restart, options, abort
+  level, main menu), LEVEL SELECT (any level on its own).
 - Drawn with Victor Luchits' YATSSD (unchanged) in the Hurrican port's frame buffer layout:
-  320 x 176 of level, a 24-line panel with the HUD and a timing line (frame rate, ms per part).
-- The music is SuperTux's, as CD audio; 12 of its sounds play on the Sega CD's PCM chip.
-- Not yet: enemies, bonus blocks, big Tux, animated tiles, the background's half-speed scroll.
-- The boot path is Hurrican CD32X's, byte for byte (R1c: the diagnostics text is off again; the
-  SuperTux splash with "LOADING" and the progress bar shows from power-on until the game starts).
+  320 x 176 of level, a 24-line panel with the status and a timing line.
+- The music is SuperTux's, as CD audio; 20 of its sounds play on the Sega CD's PCM chip.
+- The boot path is Hurrican CD32X's, byte for byte (no diagnostics text; the SuperTux splash
+  with "LOADING" and the progress bar shows until the game starts).
 
-`docs/R1B_NOTES.md` explains the screen, how Vic's tiler runs under this boot path and what to
-look for on the console. `build/previews/` shows every level as the 32X draws it.
+`docs/R2_NOTES.md`: what is in R2, file by file against SuperTux's sources, the buttons, the
+memory, the saves and what to watch on the console. `docs/R1B_NOTES.md` explains the screen and
+how Vic's tiler runs under this boot path. `build/previews/` shows world 1 as the 32X draws it.
 
 ## Building
 
@@ -42,7 +48,7 @@ port.
 
 The first run fetches SuperTux 0.1.3 (`tools/stx_fetch.sh`: tag v0.1.3 of
 github.com/SuperTux/supertux) into `SuperTux-0.1.3/`. Nothing of SuperTux is stored in this
-repository. The disc: `cd32x/subcpu/SuperTuxR1f.cue` (+ `.bin`) - ares or real hardware
+repository. The disc: `cd32x/subcpu/SuperTuxR2.cue` (+ `.bin`) - ares or real hardware
 (Fusion cannot emulate the RAM cart). `DATA_ONLY=1 ./build.sh` stops after the data and the PC
 check.
 
@@ -50,7 +56,11 @@ check.
 
 | Path | Contents |
 |---|---|
-| `game/stx.c` | the game (SuperTux's rules in C, fixed point) |
+| `game/stx.h` | the game's map: what each file does, the shared data and calls |
+| `game/res.c`, `level.c` | the resident data (sprites, letters, pictures, texts); a level, its layers and tile rules |
+| `game/tux.c`, `objects.c` | Tux (player.cpp); bad guys, upgrades, bullets, bricks, scores (badguy.cpp, special.cpp, gameobjs.cpp) |
+| `game/game.c` | a level being played (gameloop.cpp, world.cpp): camera, particles, music, end, drawing |
+| `game/wmap.c`, `menus.c` | the world maps (worldmap.cpp); title, menus, texts, high scores, saves, `main()` |
 | `game/yt.h`, `yt_layers.c`, `yt_mars.c` | Vic's tiler on Hurrican's screen: the layer driver and the two registers it needs |
 | `game/host.c`, `yt_host.c`, `host/` | the PC build: the platform layer and Vic's drawing as C stand-ins |
 | `mars/Makefile` | the SH2 program (Hurrican's, with `game/` and Vic's files) |
@@ -62,7 +72,7 @@ check.
 | `tools/stx_music.sh` | the modules -> CD audio tracks (libxmp-lite, `tools/it2wav.c`) |
 | `tools/check_boot.py` | stops the build if a boot path file differs from Hurrican's |
 | `tools/stx_fetch.sh` | gets SuperTux 0.1.3 |
-| `docs/` | developer notes: `STX_HANDOFF.md`, `R1B_NOTES.md`, `BOOT_PATH_NOTES.md`, `EXAMPLES_NOTES.md` |
+| `docs/` | developer notes: `STX_HANDOFF.md`, `R2_NOTES.md`, `R1B_NOTES.md`, `BOOT_PATH_NOTES.md`, `EXAMPLES_NOTES.md` |
 
 ## Licences and credits
 

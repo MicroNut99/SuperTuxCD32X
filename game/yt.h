@@ -29,7 +29,7 @@
  *   0x14C00                    Vic's "extrafb": the dirty matrix (canvas_yaw = 220 puts it here:
  *                              0x200 + 384 * 220), 3 + 24 * 12 words
  *   0x16000                    the platform layer's blank line (the border lines)
- *   The view is 320 x 176: plat_present_scroll(pal, scroll_y, scroll_x, 176) shows canvas rows
+ *   R2 ("Sharpened": half size, 16-pixel tiles - the R1 layout, kept). The view is 320 x 176: plat_present_scroll(pal, scroll_y, scroll_x, 176) shows canvas rows
  *   scroll_y .. scroll_y + 175 from column scroll_x, then the 24 panel lines.
  *   As in YATSSD, the canvas holds the view plus 64 columns and 16 rows: when the camera passes
  *   a multiple of 64 sideways or 16 up / down, the canvas is "re-anchored" and the dirty matrix
@@ -66,6 +66,8 @@ int  yt_layers(int first, int last);          /* returns the tiles drawn */
 int  yt_sprite(int vx, int vy, int w, int h, const uint8_t *pixels);
 int  yt_scroll_x(void);
 int  yt_scroll_y(void);
+/* the cell of world tile (tx, ty) redrawn in this buffer (after yt_begin; animated tiles) */
+void yt_mark_tile(int tx, int ty);
 /* a word of the dirty matrix's tile-map id (forces a full redraw of both buffers) */
 void yt_invalidate(void);
 
