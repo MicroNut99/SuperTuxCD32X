@@ -105,12 +105,26 @@ splash on.
 
 Previews checked: all 77 levels draw (tiles, backgrounds, gradients, objects marked).
 
-## Next (R1b)
+## R1b - the first disc (docs/R1B_NOTES.md)
 
-1. Level packs: maps through a tile table (u8) and block-compressed (as Hurrican's MAP.BIN),
-   one pack per level set; the resident pack: tiles, sprites, backgrounds, palette.
-2. `mars/`: Hurrican's engine Makefile with `game/` new: YATSSD `draw_tilemap` for the three tile
-   layers, the background picture as a parallax layer (or on a Genesis plane - to measure),
-   Tux's walk / run / jump in fixed point (SuperTux's `physic.cpp`, `player.cpp` rules).
-3. `host/`: the same game code on the PC, frames as pictures (as Hurrican's host build).
-4. The disc: Hurrican's build steps, the timing line on screen.
+- `game/stx.c`: world 1 (26 levels, `OJ001.PAK`-`OJ026.PAK`), Tux walking / running / skidding /
+  jumping with SuperTux 0.1.3's rules in fixed point at its own 100 steps a second, coins, the
+  level end, lives and time, the HUD and the timing line in a 24-line panel, pause with level
+  choice.
+- Drawing: Vic's tiler (`yatssd/` unchanged: `draw_handle_layercmd` + dirty matrix, `draw_sprite`,
+  the pixel loops, the font) in Hurrican's frame buffer layout; `game/yt_layers.c` is YATSSD's
+  `draw_tile_layer` without its three hardware calls (line table / shift register, the COMM4
+  slave hand-shake, the Genesis planes), which cannot run under this boot path - R1B_NOTES.md
+  says why, call by call.
+- Build: `build.sh` = Hurrican's disc steps with SuperTux's data; `mars/Makefile` = Hurrican's
+  with `game/` + Vic's files; `EXTRA_DEFS="-DOJ32X_MUSIC=1 -DOJ32X_DIAG_TEXT=1"`.
+- Checked on the PC (`host/`, frames looked at, address/UB checkers with random input) and
+  compiled + linked for the SH2 here; not yet run on the console.
+
+## Next
+
+1. R1b on the console (ares / real hardware): boot, first picture, timing line, music.
+2. Then, by what the timing line shows: the background at half speed (SuperTux's bkgd_speed 50)
+   - on the Genesis planes at the very end (68000 side, as Hurrican and Tyrian plan), or as a
+   separate layer on the 32X; animated tiles; enemies (snowball, mriceblock, ... - the objects
+   are already in Lnnn.BIN); bonus blocks and bricks; big Tux.

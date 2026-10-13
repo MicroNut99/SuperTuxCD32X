@@ -12,3 +12,10 @@ cd32x/subcpu/*.iso
 cd32x/subcpu/*.bin
 cd32x/subcpu/*.cue
 discs/
+__pycache__/
+host/stx_host
+host/stx_asan
+mars/obj/
+mars/stx32x.*
+mars/OPENJAZZ.32X
+mars/report.txt

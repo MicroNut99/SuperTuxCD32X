@@ -33,6 +33,9 @@ first engine build (R1b) settles them:
                start x s16 y s16 (SuperTux's 640x480 units), nobjects u16, pad u16;
                3 layers (background, interactive, foreground) x w*h tile numbers (u16; the
                tile number is SuperTux's tile id - ids above 255 occur), objects nobjects x {kind u8, pad u8, x s16, y s16}
+  SPRITES.BIN  "STXS" nsprites u16, nframes u16; nsprites x {name[24], frames u16, fps x 10 u16,
+               x-hotspot s16, y-hotspot s16 (SuperTux's 640x480 units), first frame u16, pad u16};
+               nframes x {w u16 (a multiple of 8), h u16, offset u32}; pixels (4-byte aligned)
   LEVELS.TXT   index, set, file, name, size
   REPORT.TXT   the measurements
 """
@@ -202,6 +205,7 @@ def main():
     with open(os.path.join(outdir, "PALETTE.BIN"), "wb") as f:
         for r, g, b in pal.rgb[:BACK_FIRST]:
             f.write(struct.pack(">H", c555(int(r), int(g), int(b))))
+    write_sprites(D, outdir, pal)
     spr_bytes = sum(int((a[..., 3] == 255).sum()) for a in sprite_arrs)
     rep.append("tiles: %d ids, %d frames of 16x16 = %d bytes; global colours used: %d"
                % (ntiles, len(tile_px), len(tile_px) * TILE * TILE, pal.count))
@@ -317,6 +321,56 @@ def main():
             sheet.paste(t, ((k % cols) * 164 + 2, (k // cols) * 116 + 2))
         sheet.save(os.path.join(prevdir, "ALL_LEVELS_START.png"))
         print("previews: %d levels -> %s" % (len(previews), prevdir))
+
+
+def write_sprites(D, outdir, pal):
+    """SPRITES.BIN: the sprites the game draws (SPRITES below), from SuperTux's supertux.strf
+    (name, fps, hotspot, pictures), halved and in the global colours (0 = transparent).
+    Every picture is padded on the right to a width that is a multiple of 8 and starts on a
+    4-byte boundary: YATSSD's 16-bit copy loop (draw_inc.h PIX_LOOP2) then copies 32 bits at
+    a time, and its loops never get fewer than 4 units (its counter would wrap - Sonic32 T7)."""
+    res = sexp(open(os.path.join(D, "supertux.strf")).read())[0]
+    defs = {}
+    for e in res[1:]:
+        if isinstance(e, list) and e and e[0] == "sprite":
+            ims = find(e, "images")
+            defs[val(e, "name")] = (float(val(e, "fps", 10)), num(e, "x-hotspot"), num(e, "y-hotspot"),
+                                   ims[1:] if ims else [])
+    entries, frames, pix = [], [], []
+    for name in SPRITES:
+        fps, hx, hy, ims = defs[name]
+        first = len(frames)
+        for im in ims:
+            a = halve(Image.open(os.path.join(D, "images", im)))
+            idx = pal.index(a)
+            h, w = idx.shape
+            pw = (w + 7) & ~7
+            p = np.zeros((h, pw), dtype=np.uint8)
+            p[:, :w] = idx
+            frames.append((pw, h))
+            pix.append(p.tobytes())
+        entries.append((name, len(ims), int(round(fps * 10)), hx, hy, first))
+    head = 8 + 36 * len(entries) + 8 * len(frames)
+    out = bytearray(b"STXS" + struct.pack(">HH", len(entries), len(frames)))
+    for name, n, fps10, hx, hy, first in entries:
+        out += name.encode()[:24].ljust(24, b"\0") + struct.pack(">HHhhHH", n, fps10, hx, hy, first, 0)
+    off = (head + 3) & ~3
+    offs = []
+    for p in pix:
+        offs.append(off)
+        off = (off + len(p) + 3) & ~3
+    for (w, h), o in zip(frames, offs):
+        out += struct.pack(">HHI", w, h, o)
+    for p, o in zip(pix, offs):
+        out += b"\0" * (o - len(out)) + p
+    out += b"\0" * ((-len(out)) & 3)
+    with open(os.path.join(outdir, "SPRITES.BIN"), "wb") as f:
+        f.write(out)
+
+
+# the sprites the game draws (R1b: small Tux); SPRITES.BIN keeps this order (game/stx.c SPR_*)
+SPRITES = ["smalltux-stand-left", "smalltux-stand-right", "smalltux-walk-left", "smalltux-walk-right",
+           "smalltux-jump-left", "smalltux-jump-right", "smalltux-skid-left", "smalltux-skid-right"]
 
 
 def render(layers, tdesc, tile_px, pal, backs, bgi, top, bot, W, H, objs):
