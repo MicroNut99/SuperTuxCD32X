@@ -34,8 +34,34 @@ diagnosed). Hurrican had them off (release). The documented switches, nothing el
 | `KOBO_BOOT_TEXT` | `cd32x/subcpu/main.c` | 1 | 1 | Chilly's white 32X start-up messages (already on) |
 | `SCD_DIAG_TEXT` | `cd32x/subcpu/scd.c` | 0 | **1** | the green CKPT / INITCD lines and the CD error / root-directory lists |
 | `OJ32X_DIAG_TEXT` | `port/plat_mars.c` (build flag `-DOJ32X_DIAG_TEXT=1` in mars/, R1b) | 0 | **1** | the text stays until the engine's C++ start-up has worked |
-
 | Genesis display at the end of the 68000's set-up | `cd32x/subcpu/hw_md.s` `md_init_hw` | `0x8134` off (OL-13) | **`0x8174` on** | Chilly's white boot lines ("Activated 32X", "Cleared 32X", "32X Waiting", "CD BOOT TABLE" ...) from the very start, before the SH2 loader runs |
+
+**The green lines - checked one by one** (Micronut99: "super important"). With the switches
+above, every green line in the boot path is compiled in and drawn in a visible colour:
+
+- the colour: `hw_md.s` sets palette line 1 to `0x00A0` (green; Kobo had it black for release);
+- `main.c` `print_diag()` (all rows 0-27: build line, CD drive, Sub-CPU, 68K listener, 32X
+  init and its errors, SH2 handshake, cart check, `STATE:` row 10, the Sub-CPU heartbeat row
+  19, file and chunk lines): gated only by `KOBO_DIAG_TEXT` (now 1) and `quiet`, which is set
+  only by command 44 when `SLIDESHOW_DEBUG` is 0 - it is 1, so never;
+- the `#if KOBO_DIAG_TEXT` (OL-5) blocks - the heartbeat row 19 and the `STATE:` row 10 - are
+  compiled in;
+- `scd.c` `scd_diag_print`, `scd_diag_print_row2`, `scd_timeout_print`, `scd_print_row` (CKPT,
+  INITCD, CD time-outs, file not found + the root directory list): gated only by
+  `SCD_DIAG_TEXT` (now 1);
+- the loader shows its codes (4D01-4D07, 4C00-4C3F, errors 4DE1-4DE4) through COMM12 in the
+  `STATE:` row, and puts the Genesis text in front of the splash (`OJ_DIAG_TEXT` 1: DISPMODE
+  0x81).
+
+When they stop, by design of the boot path (not changed):
+
+- `port/plat_mars.c` switches the Genesis text off (CMD 52) just before the game's `main()`,
+  after the resident pack and the sound effects are loaded - the game's own screens follow;
+- it then writes `STATE 4B10` (the game runs): the Sub-CPU stops reprinting rows 10, 18 and 19
+  (OL-2b / HW5: reprinting every pass dropped Kobo to 1-2 fps, each line goes through the 68000).
+
+In the game itself, problems show on the 32X side: the error screen (`plat_fatal`, with the last
+log line) and the game's timing line.
 
 **Why the white text is on (Micronut99):** for the first builds, so that a disc that stops
 early is not a black screen - the white lines show how far the boot got. Later builds turn it
