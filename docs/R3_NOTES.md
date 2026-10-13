@@ -4,6 +4,9 @@ Micronut99's R2 video (timing line on, Via Nostalgica): **F 17-22**, L 6.5-9.5, 
 S 1-2, **H 7-9**, W 0.5-6, **N 140-245** tiles a frame. R3 goes after T, N, H and L, and keeps
 levels in the RAM cart so that they are read from the disc once.
 
+**On the console (Micronut99's video, Welcome to Antarctica): F 38-56, L 1.9-2.8, T 3-9,
+S 0.8-1.5, H 1-4, W 6-9, N 9-103** (R2: F 17-22). No crashes; the title starts with no read.
+
 ## 1. One merged picture a cell (T, N)
 
 R2 gave Vic's tiler four layers (background picture, background-tm, interactive-tm,

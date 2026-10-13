@@ -155,7 +155,8 @@ The splash, music levels, the menus and extras of the other ports, options from 
 
 ## Next
 
-1. R3 on the console: the timing line (F, T, N), level reads, overlays, coming back to a level.
+1. R3 ran on the console: F 38-56 (R2 17-22), T 3-9 ms, L 2-3 ms, H 1-4 ms, W 6-9 ms (most
+   frames wait for the refresh). Still to film: level reads, the world map, a snowy level.
 2. If T is still large: the canvas re-anchor every 64 pixels (a full redraw) is the remaining
    spike; if L: the bad guys' collision loops (all pairs, every 10 ms step).
 3. The background at half speed (bkgd_speed): would need the background separate again.
