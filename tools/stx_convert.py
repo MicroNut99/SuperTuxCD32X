@@ -36,6 +36,9 @@ first engine build (R1b) settles them:
   SPRITES.BIN  "STXS" nsprites u16, nframes u16; nsprites x {name[24], frames u16, fps x 10 u16,
                x-hotspot s16, y-hotspot s16 (SuperTux's 640x480 units), first frame u16, pad u16};
                nframes x {w u16 (a multiple of 8), h u16, offset u32}; pixels (4-byte aligned)
+  FONTS.BIN    SuperTux's letters (see write_fonts)
+  TITLE.BIN    the menus' picture and logo (see write_title)
+  INTRO.TXT, EXTRO.TXT, CREDITS.TXT  SuperTux's story, ending and credits as they are
   LEVELS.TXT   index, set, file, name, size
   REPORT.TXT   the measurements
 """
@@ -206,6 +209,11 @@ def main():
         for r, g, b in pal.rgb[:BACK_FIRST]:
             f.write(struct.pack(">H", c555(int(r), int(g), int(b))))
     write_sprites(D, outdir, pal)
+    write_fonts(D, outdir, pal)
+    write_title(D, outdir)
+    for t in ("intro.txt", "extro.txt", "CREDITS"):    # the story, the ending, the credits (as text)
+        txt = open(os.path.join(D, t), "rb").read().replace(b"\r", b"")
+        open(os.path.join(outdir, t.split(".")[0].upper() + ".TXT"), "wb").write(txt)
     spr_bytes = sum(int((a[..., 3] == 255).sum()) for a in sprite_arrs)
     rep.append("tiles: %d ids, %d frames of 16x16 = %d bytes; global colours used: %d"
                % (ntiles, len(tile_px), len(tile_px) * TILE * TILE, pal.count))
@@ -366,6 +374,81 @@ def write_sprites(D, outdir, pal):
     out += b"\0" * ((-len(out)) & 3)
     with open(os.path.join(outdir, "SPRITES.BIN"), "wb") as f:
         f.write(out)
+
+
+def write_fonts(D, outdir, pal):
+    """FONTS.BIN: SuperTux's own letters (images/status/letters-*.png, src/text.cpp: 16 cells a
+    row, rows ' '-'/', '0'-'?', '@'-'O', 'P'-'_', '`'-'o', 'p'-DEL), in the global colours.
+    Each glyph cell is padded on the right to a multiple of 8 (YATSSD's loops, as SPRITES.BIN).
+      "STXF" n u16, pad u16; n x {cell w u16 (padded), h u16, advance u16, pad u16, offset u32};
+      then per font 96 cells of w*h bytes (characters 32-127)"""
+    fonts = []
+    for name, cw, chh, half in FONTS:
+        im = Image.open(os.path.join(D, "images", "status", name)).convert("RGBA")
+        cells = []
+        for k in range(96):
+            c = im.crop(((k % 16) * cw, (k // 16) * chh, (k % 16) * cw + cw, (k // 16) * chh + chh))
+            a = halve(c) if half else np.array(c)
+            if not half:
+                a = a.copy()
+                a[..., 3] = np.where(a[..., 3] >= 128, 255, 0)
+            idx = pal.index(a)
+            cells.append(idx)
+        h, w = cells[0].shape
+        pw = (w + 7) & ~7
+        data = b""
+        for idx in cells:
+            p = np.zeros((h, pw), dtype=np.uint8)
+            p[:, :w] = idx
+            data += p.tobytes()
+        fonts.append((pw, h, w, data))
+    out = bytearray(b"STXF" + struct.pack(">HH", len(fonts), 0))
+    off = 8 + 12 * len(fonts)
+    for pw, h, w, data in fonts:
+        out += struct.pack(">HHHHI", pw, h, w, 0, off)
+        off += (len(data) + 3) & ~3
+    for pw, h, w, data in fonts:
+        out += data + b"\0" * ((-len(data)) & 3)
+    with open(os.path.join(outdir, "FONTS.BIN"), "wb") as f:
+        f.write(out)
+
+
+def write_title(D, outdir):
+    """TITLE.BIN: the menus' picture - SuperTux's title background (images/title/background.jpg)
+    as the 32X view (320 x 176) and its logo (images/title/logo.png) as a keyed picture, together
+    in 64 colours for palette entries 192-255 (the level background's place: the menus have no
+    level). "STXI" 64 x u16 colours; 320 x 176 pixels; logo w u16 (a multiple of 8), h u16,
+    pixels (0 = see-through)."""
+    bg = Image.open(os.path.join(D, "images", "title", "background.jpg")).convert("RGB").resize((320, 240), Image.LANCZOS)
+    bg = bg.crop((0, 40, 320, 216))
+    logo = Image.open(os.path.join(D, "images", "title", "logo.png")).convert("RGBA")
+    logo = logo.resize((logo.width * 55 // 100, logo.height * 55 // 100), Image.LANCZOS)
+    la = np.array(logo)
+    la[..., 3] = np.where(la[..., 3] >= 128, 255, 0)
+    both = Image.new("RGB", (320, 176 + logo.height))
+    both.paste(bg, (0, 0))
+    both.paste(Image.fromarray(la[..., :3]), (0, 176))
+    q = both.quantize(colors=64, method=Image.MEDIANCUT, dither=Image.NONE)
+    qa = np.array(q, dtype=np.uint16) + 192
+    pal = np.array(q.getpalette()[:64 * 3]).reshape(-1, 3)
+    out = bytearray(b"STXI")
+    for r, g, b in pal:
+        out += struct.pack(">H", c555(int(r), int(g), int(b)) or 0x0400)
+    out += qa[:176].astype(np.uint8).tobytes()
+    lw = (logo.width + 7) & ~7
+    lp = np.zeros((logo.height, lw), dtype=np.uint8)
+    lp[:, :logo.width] = np.where(la[..., 3] == 255, qa[176:176 + logo.height, :logo.width], 0).astype(np.uint8)
+    out += struct.pack(">HH", lw, logo.height) + lp.tobytes()
+    with open(os.path.join(outdir, "TITLE.BIN"), "wb") as f:
+        f.write(out)
+
+
+# SuperTux's letters for the menus and the texts (file, cell w, cell h, halved?); FONTS.BIN keeps
+# this order (game/stx.c F_*): gold and white as SuperTux draws its menus (full size: 20 letters
+# a line) and white-small as it is (40 a line) for the story, the credits and the lists. Halved
+# letters were tried first: their white insides vanish at half size (only the outline is left).
+FONTS = [("letters-gold.png", 16, 18, False), ("letters-white.png", 16, 18, False),
+         ("letters-white-small.png", 8, 9, False)]
 
 
 # the sprites the game draws (R1b: small Tux); SPRITES.BIN keeps this order (game/stx.c SPR_*)

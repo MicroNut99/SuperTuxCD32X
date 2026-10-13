@@ -165,3 +165,18 @@ int yt_sprite(int vx, int vy, int w, int h, const uint8_t *pixels)
 	/* overwrite mode: the 32X skips 0 bytes (see-through); 16-bit writes (even x) */
 	return draw_sprite(vx, vy, w, h, 0, pixels, DRAWSPR_OVERWRITE);
 }
+
+void yt_screen(void)
+{
+	if (tm.tw == 0)
+	{
+		/* no level yet: the sizes Vic's draw_dirtyrect divides by (dsprite.c marks letters too) */
+		tm.tw = tm.th = YT_TILE;
+		tm.canvas_tiles_hor = YT_PITCH / YT_TILE;
+		tm.canvas_tiles_ver = YT_ROWS / YT_TILE;
+		draw_setScissor(0, 0, YT_VIEW_W, YT_VIEW_H);
+	}
+	cam_x = cam_y = scroll_x = scroll_y = 0;
+	window_canvas_x = window_canvas_y = 0;
+	yt_invalidate();
+}

@@ -12,6 +12,8 @@ Hurrican and OpenJazz discs, so they go through the unchanged commands:
                  PALETTE.BIN  192 x u16 global colours (entries 0-191; stx_convert.py)
                  TILES.BIN    the tile set (stx_convert.py: "STXT", tile table, 16x16 frames)
                  SPRITES.BIN  the sprites (stx_convert.py: "STXS")
+                 FONTS.BIN    SuperTux's letters ("STXF"), TITLE.BIN the menus' picture ("STXI")
+                 INTRO.TXT, EXTRO.TXT, CREDITS.TXT  the story, the ending, the credits
   OJnnn.PAK    one level each (nnn = level index + 1, LEVELS.TXT): loaded by the game with
                plat_load_pack(200 + nnn) (command 38 id 200+nnn -> disc file OJnnn.PAK) into
                the cart at 0x280000 and mounted as pack 1.
@@ -33,6 +35,7 @@ Hurrican and OpenJazz discs, so they go through the unchanged commands:
                       animated tiles show their first frame (R1b)
                    ..  the rules layer: w*h x u16 SuperTux tile ids of interactive-tm (the
                       game's collision and pick-ups read TILES.BIN's flags through it)
+                 NAME.TXT     the level's name (LEVELS.TXT), shown when it starts
                  BACKT.BIN    64 x u16 colours for palette entries 192-255, then the
                               background tiles, 256 bytes each (16x16, indices 192-255)
 """
@@ -100,7 +103,9 @@ def main():
 
     # ---- the resident pack
     size = write_pack(os.path.join(out, "IMAGE8.RAW"),
-                      [("PALETTE.BIN", rd("PALETTE.BIN")), ("TILES.BIN", tiles), ("SPRITES.BIN", rd("SPRITES.BIN"))],
+                      [("PALETTE.BIN", rd("PALETTE.BIN")), ("TILES.BIN", tiles), ("SPRITES.BIN", rd("SPRITES.BIN")),
+                       ("FONTS.BIN", rd("FONTS.BIN")), ("TITLE.BIN", rd("TITLE.BIN")),
+                       ("INTRO.TXT", rd("INTRO.TXT")), ("EXTRO.TXT", rd("EXTRO.TXT")), ("CREDITS.TXT", rd("CREDITS.TXT"))],
                       0x180000)
     print("  IMAGE8.RAW: %d bytes (palette, %d tile frames, sprites)" % (size, nframes))
 
@@ -112,6 +117,10 @@ def main():
         w, h, off = struct.unpack(">HHI", e[16:24])
         back.append((backs[off:off + w * h], backs[off + w * h:off + w * h + 128], w, h))
 
+    names = {}
+    for line in open(os.path.join(data, "LEVELS.TXT")):
+        if line.strip():
+            names[int(line[:3])] = line[38:78].strip()      # stx_convert.py: "%3d  %-7s %-24s %-40s"
     levels = [int(a) for a in sys.argv[3:]] or list(range(26))     # world 1
     for li in levels:
         lv = rd("L%03d.BIN" % li)
@@ -154,7 +163,8 @@ def main():
             body += struct.pack(">%dH" % (W * H), *L)
         body += struct.pack(">%dH" % (W * H), *[t if t < ntiles else 0 for t in lay[1]])
         name = "OJ%03d.PAK" % (li + 1)
-        size = write_pack(os.path.join(out, name), [("LEVEL.BIN", body), ("BACKT.BIN", bytes(colours) + bytes(bt))],
+        size = write_pack(os.path.join(out, name), [("LEVEL.BIN", body), ("NAME.TXT", names.get(li, "").encode("ascii", "replace")),
+                           ("BACKT.BIN", bytes(colours) + bytes(bt))],
                           0x170000)
         print("  %s: level %d, %dx%d tiles, %d bytes" % (name, li, W, H, size))
 

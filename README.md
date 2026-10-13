@@ -16,7 +16,10 @@ on the 32X: it will look and play no better than on a PC, and the hardware force
 
 - World 1's 26 levels; small Tux walks, runs (B), skids and jumps (C or A) with SuperTux 0.1.3's
   own rules (rebuilt in fixed point, at its own 100 steps a second); coins, lives, time, the level
-  end and the next level. START pauses; in the pause LEFT / RIGHT picks a level, A or C goes there.
+  end and the next level; score, high scores (kept in the Sega CD's backup RAM).
+- Menus as in the other CD32X ports: title, options (start level, lives, music, timing line,
+  button layout, controls, story, high scores, credits with a music player), pause (continue,
+  restart, main menu, timing, music), SuperTux's story and ending texts.
 - Drawn with Victor Luchits' YATSSD (unchanged) in the Hurrican port's frame buffer layout:
   320 x 176 of level, a 24-line panel with the HUD and a timing line (frame rate, ms per part).
 - The music is SuperTux's, as CD audio; 12 of its sounds play on the Sega CD's PCM chip.
@@ -39,7 +42,7 @@ port.
 
 The first run fetches SuperTux 0.1.3 (`tools/stx_fetch.sh`: tag v0.1.3 of
 github.com/SuperTux/supertux) into `SuperTux-0.1.3/`. Nothing of SuperTux is stored in this
-repository. The disc: `cd32x/subcpu/SuperTuxR1d.cue` (+ `.bin`) - ares or real hardware
+repository. The disc: `cd32x/subcpu/SuperTuxR1e.cue` (+ `.bin`) - ares or real hardware
 (Fusion cannot emulate the RAM cart). `DATA_ONLY=1 ./build.sh` stops after the data and the PC
 check.
 

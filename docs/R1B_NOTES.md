@@ -15,7 +15,30 @@ the CPU runs into the padding on the first tile layer. Vic builds with `-fno-ali
 files with his release flags, and `tools/check_sdram_code.py` (run by mars/Makefile) stops the
 build if any SDRAM function still contains padding it can fall into - it finds 06000A26 in the
 R1c program. The music tracks are now normalised to a peak of 0.70 (they peaked at 0.16-0.22:
-faint). Disc: `SuperTuxR1d.cue`. Everything else below is unchanged.
+faint). Disc was `SuperTuxR1d.cue`.
+
+**R1e** - R1d ran on the console (two videos: level 1 at 20-30 frames a second; the timing line
+said tiles about 19 ms, HUD 10.3 ms). Micronut99: "add everything - all the extra menu items of
+the other projects". Added, after Hurrican CD32X's menus (game/p1.c P1b-P1p) and the OpenJazz
+port's settings:
+- the **title screen** (SuperTux's title picture and logo, `TITLE.BIN`): START GAME, OPTIONS;
+  a new game from level 1 shows SuperTux's **story** (intro.txt) first
+- **OPTIONS**: LEVEL (start level 1-26), LIVES (1-9), MUSIC on/off, TIMING (the timing line)
+  on/off, BUTTONS (C or B jumps - the OpenJazz port's A/B swap), CONTROLS, STORY, HIGH SCORES,
+  CREDITS (SuperTux's CREDITS, scrolling, with a music player: LEFT/RIGHT plays tracks 2-13),
+  BACK (saves)
+- **pause**: CONTINUE, RESTART LEVEL, MAIN MENU, TIMING on/off, MUSIC on/off
+- the level's **name** when it starts, LEVEL CLEAR, GAME OVER, the **ending** (extro.txt)
+  after level 26
+- SuperTux's **score** (25 a coin) and a **high score table** of ten with name entry; the
+  table and the options are kept in the Sega CD's backup RAM with Hurrican's commands 56-59
+  (128 bytes at byte 3840 of the file's buffer, "STX1" - Hurrican's are the 128 after them)
+- the letters are SuperTux's own (`FONTS.BIN`: letters-gold and letters-white at full size,
+  letters-white-small for the texts; halved letters lost their white insides)
+- the panel is drawn only when its text changes (it was 10.3 ms a frame); the timing line is
+  off by default (OPTIONS / pause); otherwise the panel's second line is the score.
+Not taken over: Hurrican's demo (attract) mode and its 2ND CPU switch (SuperTux's rules are
+light; nothing runs on the second SH2 yet). Disc: `SuperTuxR1e.cue`.
 
 ## What it does
 

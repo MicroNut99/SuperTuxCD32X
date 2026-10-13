@@ -18,6 +18,15 @@ void yt_tile_counter_reset(void)
 	MARS_SYS_COMM6 = 0;        /* draw_tile_layer: "MARS_SYS_COMM6 = 0" before the layer */
 }
 
+void yt_picture(const uint8_t *pixels)
+{
+	/* 320 x 176 into the canvas (byte 0x200, 384 a line), 32-bit writes; pixels 4-byte aligned */
+	volatile uint32_t *d = (volatile uint32_t *)((uint8_t *)&MARS_FRAMEBUFFER + 0x200);
+	const uint32_t *s = (const uint32_t *)pixels;
+	for (int y = 0; y < YT_VIEW_H; y++, d += YT_PITCH / 4, s += YT_VIEW_W / 4)
+		for (int x = 0; x < YT_VIEW_W / 4; x++) d[x] = s[x];
+}
+
 /* dtiles.c's init_tilemap() and draw_tile_layer() / draw_tilemap() refer to these YATSSD
  * hw_32x.c functions. They are not called in this port (game/yt_layers.c replaces those three
  * functions); if one ever were, the error screen names it instead of the program running on. */

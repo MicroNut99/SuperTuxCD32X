@@ -126,3 +126,8 @@ int draw_sprite(int x, int y, int w, int h, int stride, const uint8_t *data, int
 	draw_dirtyrect(&tm, x, y, w, h);
 	return 1;
 }
+
+void yt_picture(const uint8_t *pixels)
+{
+	for (int y = 0; y < YT_VIEW_H; y++) memcpy(canvas() + y * YT_PITCH, pixels + y * YT_VIEW_W, YT_VIEW_W);
+}

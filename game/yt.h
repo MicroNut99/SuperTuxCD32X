@@ -69,6 +69,12 @@ int  yt_scroll_y(void);
 /* a word of the dirty matrix's tile-map id (forces a full redraw of both buffers) */
 void yt_invalidate(void);
 
+/* the menus and texts (not a level): the canvas at its corner (scroll 0, 0); yt_picture copies a
+ * whole 320 x 176 picture into it (32-bit writes), yt_sprite then draws letters and the logo.
+ * The tile map is invalidated, so a level drawn afterwards starts with a full redraw. */
+void yt_screen(void);
+void yt_picture(const uint8_t *pixels);       /* platform part: game/yt_mars.c, game/yt_host.c */
+
 /* platform parts (game/yt_mars.c on the 32X, game/yt_host.c on the PC) */
 int16_t *yt_extrafb(void);                    /* Vic's extrafb in the back buffer */
 void yt_tile_counter_reset(void);             /* COMM6 = 0 (Vic's tile counter, master only) */
