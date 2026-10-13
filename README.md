@@ -61,6 +61,8 @@ repository.
 | `cd32x/`, `port/` | the Hurrican CD32X port's boot path and platform layer, unchanged |
 | `tools/libxmp-lite`, `it2wav.c`, `make_boot_image.py`, `make_oj_rom.py`, `mars_boot.bin` | from the Hurrican port, unchanged |
 | `docs/STX_HANDOFF.md` | developer notes |
+| `docs/BOOT_PATH_NOTES.md` | the boot path, annotated with file and line references |
+| `docs/EXAMPLES_NOTES.md` | lessons from the OpenLara, OpenJazz, OpenTyrian, Kobo, Hurrican and Sonic32 ports |
 
 ## Licences and credits
 
