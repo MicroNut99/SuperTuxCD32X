@@ -48,6 +48,11 @@ static uint8_t *reslist[MAX_RES + 1];
 static uint8_t res_anim[MAX_RES + 1];  /* resources of animated pictures */
 static uint8_t anim_gen[2];            /* per frame buffer: the animation step it shows */
 static uint32_t anim_step;
+/* R5: each animation's frame now, and the frame each buffer last drew - a buffer redraws only
+ * the cells of the animations that changed since (R3/R4: all animated cells in view whenever
+ * any of them changed: levels full of water and coins drew 30-50 cells a frame for it) */
+#define MAX_ANIMS 256                  /* the most in a level: 183 (stx_pack.py) */
+static uint8_t anim_k[MAX_ANIMS], anim_seen[2][MAX_ANIMS];
 /* bouncing bricks (at most 4 at once, objects.c MAX_BOB): their cells, for the moving-background
  * drawing, which draws the tiles one by one */
 static int hidden_cells[8], n_hidden;
@@ -247,6 +252,7 @@ void load_level(int li)
 	yt_level(pic_layer, lw, lh, reslist);
 	anim_gen[0] = anim_gen[1] = 0xFF;
 	anim_step = 0xFFFFFFFFu;
+	memset(anim_seen, 0xFF, sizeof anim_seen);   /* no frame 255: each buffer draws them once */
 }
 
 /* animated pictures: their resource shows the frame of the time (Tile::draw: time / speed) */
@@ -262,6 +268,7 @@ void level_animate(uint32_t ms)
 		const int r = be16(e), nf = be16(e + 2), speed = be16(e + 4), first = be16(e + 6);
 		if (!speed || !nf) continue;
 		const int k = (int)((ms / (uint32_t)speed) % (uint32_t)nf);
+		if (a < MAX_ANIMS) anim_k[a] = (uint8_t)k;
 		uint8_t *now = (uint8_t *)(comp_px + YT_TILE * YT_TILE * be16(L_frames + 2 * (first + k)));
 		if (reslist[r] != now) { reslist[r] = now; changed = 1; }
 	}
@@ -274,13 +281,34 @@ void level_mark_animated(int cx, int cy)
 	const int b = plat_back_index() & 1;
 	if (anim_drawn[b] == anim_gen[b]) return;
 	anim_drawn[b] = anim_gen[b];
-	const int tx0 = cx / YT_TILE, ty0 = cy / YT_TILE;
-	for (int ty = ty0; ty <= ty0 + YT_VIEW_H / YT_TILE + 1 && ty < lh; ty++)
-		for (int tx = tx0; tx <= tx0 + YT_VIEW_W / YT_TILE + 1 && tx < lw; tx++)
+	/* bit 1 of res_anim: this animation's picture changed since this buffer drew it */
+	int any = 0;
+	for (int a = 0; a < n_anims; a++)
+	{
+		const int r = be16(L_anims + 8 * a);
+		if (r > n_res) continue;
+		if (a >= MAX_ANIMS || anim_seen[b][a] != anim_k[a])
+		{
+			if (a < MAX_ANIMS) anim_seen[b][a] = anim_k[a];
+			res_anim[r] |= 2;
+			any = 1;
+		}
+	}
+	if (!any) return;
+	/* the whole canvas (view + the columns / lines around it): a cell kept outside the view
+	 * with an old frame would come into view with it */
+	const int tx0 = (cx - cx % YT_SCROLL_X) / YT_TILE, ty0 = (cy - cy % YT_SCROLL_Y) / YT_TILE;
+	for (int ty = ty0; ty < ty0 + YT_ROWS / YT_TILE && ty < lh; ty++)
+		for (int tx = tx0; tx < tx0 + YT_PITCH / YT_TILE && tx < lw; tx++)
 		{
 			const uint16_t v = pic_layer[ty * lw + tx];
-			if (res_anim[v >> 2]) yt_mark_tile(tx, ty);
+			if (res_anim[v >> 2] & 2) yt_mark_tile(tx, ty);
 		}
+	for (int a = 0; a < n_anims; a++)
+	{
+		const int r = be16(L_anims + 8 * a);
+		if (r <= n_res) res_anim[r] &= 1;
+	}
 }
 
 /* the layers' SuperTux tile ids at a cell (1 background-tm, 2 interactive-tm as it is now,

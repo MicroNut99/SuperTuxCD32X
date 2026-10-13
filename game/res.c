@@ -83,32 +83,43 @@ static const char *const spr_names[S_N] = {
 	"snow0", "snow1", "snow2", "cloud", "tux-life",
 };
 
-const uint8_t *spr_frame(int s, uint32_t ms, int *w, int *h)
+/* R5: the frames are cut to their visible pixels (tools/stx_convert.py trimmed): (*dx, *dy) is
+ * where the cut picture sits in SuperTux's picture, in half-size pixels (dx even) */
+const uint8_t *spr_frame_at(int s, uint32_t ms, int *w, int *h, int *dx, int *dy)
 {
 	const Sprite *sp = &spr[s];
 	int f = sp->first;
 	if (sp->n > 1) f += (int)((ms * (uint32_t)sp->fps10 / 10000u) % (uint32_t)sp->n);
-	const uint8_t *fe = spr_frames + 8 * f;
+	const uint8_t *fe = spr_frames + 12 * f;
 	*w = be16(fe); *h = be16(fe + 2);
+	*dx = (int16_t)be16(fe + 8); *dy = (int16_t)be16(fe + 10);
 	return spr_bin + be32(fe + 4);
+}
+
+/* the cut picture only (the logo, which is not cut) */
+const uint8_t *spr_frame(int s, uint32_t ms, int *w, int *h)
+{
+	int dx, dy;
+	return spr_frame_at(s, ms, w, h, &dx, &dy);
 }
 
 /* Sprite::draw(x - hotspot) at half size */
 void spr_draw(int s, uint32_t ms, int ux, int uy, int cx, int cy)
 {
-	int w, h;
-	const uint8_t *px = spr_frame(s, ms, &w, &h);
-	yt_sprite(px_of(ux - spr[s].hx) - cx, px_of(uy - spr[s].hy) - cy, w, h, px);
+	int w, h, dx, dy;
+	const uint8_t *px = spr_frame_at(s, ms, &w, &h, &dx, &dy);
+	yt_sprite(px_of(ux - spr[s].hx) - cx + dx, px_of(uy - spr[s].hy) - cy + dy, w, h, px);
 }
 
-/* Surface::draw_part(0, 0, x, y, 32, rows): the top rows_u units of the picture (rising upgrades) */
+/* Surface::draw_part(0, 0, x, y, 32, rows): the top rows_u units of the picture (rising upgrades)
+ * - counted from the top of SuperTux's picture, of which the cut one starts dy lines down */
 void spr_draw_part(int s, int ux, int uy, int rows_u, int cx, int cy)
 {
-	int w, h;
-	const uint8_t *px = spr_frame(s, 0, &w, &h);
-	int rows = px_of(rows_u);
+	int w, h, dx, dy;
+	const uint8_t *px = spr_frame_at(s, 0, &w, &h, &dx, &dy);
+	int rows = px_of(rows_u) - dy;
 	if (rows > h) rows = h;
-	if (rows >= 2) yt_sprite(px_of(ux) - cx, px_of(uy) - cy, w, rows, px);
+	if (rows >= 2) yt_sprite(px_of(ux) - cx + dx, px_of(uy) - cy + dy, w, rows, px);
 }
 
 /* a tile (its animation frame) as a sprite: bouncing bricks, bouncy coins */
@@ -276,7 +287,7 @@ void res_load(void)
 	tile_px = p + 8 + 12 * ntiles;
 
 	spr_bin = need("SPRITES.BIN");
-	if (memcmp(spr_bin, "STXS", 4)) plat_fatal("SPRITES.BIN: NOT STXS");
+	if (memcmp(spr_bin, "STXT", 4)) plat_fatal("SPRITES.BIN: NOT STXT");
 	const int n = be16(spr_bin + 4);
 	spr_frames = spr_bin + 8 + 36 * n;
 	for (int s = 0; s < S_N; s++)

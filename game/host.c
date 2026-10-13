@@ -10,6 +10,9 @@
  *   ST_X=<units: Tux's x when a level starts>
  *   ST_PAD="frame:BUTTONS,..."  (UP DOWN LEFT RIGHT A B C X Y Z START, joined with +; "-" = none)
  *   ST_LOG=1  sound effects and music in the log
+ *   ST_STATS=1  (R5) a line a frame on stderr: "STAT frame cells sprites sprite-pixels cx cy"
+ *   ST_NOPARTICLES=1  (R5) no snow / clouds (to measure what they cost)
+ *   ST_PARALLAX  OPTIONS - BACKGROUND MOVES on (any value)
  */
 #include "plat.h"
 #include "pack.h"

@@ -76,6 +76,20 @@ void yt_mark_tile(int tx, int ty);
 void yt_rect_log(int on);
 int  yt_rect_count(void);
 void yt_rect(int i, int *x, int *y, int *w, int *h);
+/* R5, kept pictures (the clouds - game.c clouds_draw): yt_keep(1) draws sprites WITHOUT marking
+ * their cells, into the whole canvas (view + the canvas around it), so they stay in this
+ * buffer's canvas until the caller marks them away again (yt_mark_view_rect); yt_keep_box cuts
+ * them to a smaller box (view pixels). yt_watch notes the dirty matrix under a view rectangle
+ * (the canvas cell numbers into ids) before yt_layers; yt_watch_changed afterwards sets
+ * cells[id] for each of them the tiler drew and returns how many. yt_cell_box: a canvas cell's
+ * top-left in view pixels. YT_CELLS: canvas cell numbers are below it. */
+#define YT_CELLS ((YT_PITCH / YT_TILE) * (YT_ROWS / YT_TILE + 1))
+void yt_keep(int on);
+void yt_keep_box(int vx, int vy, int w, int h);
+void yt_mark_view_rect(int vx, int vy, int w, int h);
+int  yt_watch(int vx, int vy, int w, int h, int16_t *ids, int16_t *vals, int max);
+int  yt_watch_changed(const int16_t *ids, const int16_t *vals, int n, uint8_t *cells);
+void yt_cell_box(int id, int *vx, int *vy);
 /* a word of the dirty matrix's tile-map id (forces a full redraw of both buffers) */
 void yt_invalidate(void);
 

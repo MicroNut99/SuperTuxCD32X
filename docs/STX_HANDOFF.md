@@ -161,10 +161,23 @@ The splash, music levels, the menus and extras of the other ports, options from 
   HOMES.BIN `back`; game.c draws yt_back + layers 1-2 as sprites + layer 3.
 - yt_sprite: clipped sprites under 8x2 drawn byte by byte.
 
+## R5 - plain backgrounds, fewer cells (docs/R5_NOTES.md)
+
+- stx_convert.py SHARPEN_BACKGROUNDS False; sprites trimmed (SPRITES.BIN "STXT", dx/dy).
+- yt_layer: the master lists the dirty cells, both SH2s draw half each (no COMM6 lock per cell);
+  YT_VIC_TILER brings back draw_handle_layercmd.
+- Clouds kept per buffer (game.c clouds_before / clouds_draw, yt_keep / yt_watch).
+- level_mark_animated: per-buffer frame of each animation (anim_seen), whole canvas.
+- Far snowflakes skipped over tiles (no overlay pass for snow).
+- PC: ST_STATS, ST_NOPARTICLES.
+
 ## Next
 
-1. R4 on the console: the timing line on a run to the right (the 64-px dips), and Background
-   MOVES on a few levels (F, the extra read).
-2. If L is large: the bad guys' collision loops (all pairs, every 10 ms step).
-3. MOVES could be faster by merging layers 1-3 into one picture a cell drawn keyed over the
+1. R4/R5 on the console: the timing line on a run to the right (the 64-px dips), on a snowy
+   and a cloud level (N, F), and Background MOVES on a few levels (F, the extra read).
+2. The platform's frame pacing (port/plat_mars.c OJ32X_PACE, median of 16) holds fast frames
+   back when about half run long; a compile switch, but port/ stays as proven unless the user
+   asks.
+3. If L is large: the bad guys' collision loops (all pairs, every 10 ms step).
+4. MOVES could be faster by merging layers 1-3 into one picture a cell drawn keyed over the
    background, with a dirty mask for the cells under no tile.

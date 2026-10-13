@@ -10,7 +10,7 @@ SCALE (R2): everything is drawn at HALF of SuperTux's size, SHARPENED (Micronut9
 "Sharpened" from four pictures: half, half sharpened, 3/4, full): 640x480 -> 320x240, 32x32
 tiles -> 16x16, so the 32X view (320 x 176) is SuperTux's whole width. Pictures are made
 smaller premultiplied (no dark fringes) with Lanczos, then an unsharp mask (SHARPEN) brings
-back the edges that halving softens; the 32X draws keyed, so a pixel is visible when its alpha
+back the edges that halving softens (R5: not on the backgrounds - SHARPEN_BACKGROUNDS); the 32X draws keyed, so a pixel is visible when its alpha
 is at least 50 %.
 
 Colours (256):
@@ -28,9 +28,11 @@ Files written (big-endian):
                  data: fullbox 1 coin / 2 grow-up or ice flower / 3 herring / 4 1up; brick with
                  coins > 0; next tile: what the tile becomes when emptied / broken / taken
                nframes x 16x16 pixels
-  SPRITES.BIN  "STXS" nsprites u16, nframes u16; nsprites x {name[24], frames u16, fps x 10 u16,
+  SPRITES.BIN  "STXT" nsprites u16, nframes u16; nsprites x {name[24], frames u16, fps x 10 u16,
                x-hotspot s16, y-hotspot s16 (SuperTux's 640x480 units), first frame u16, pad u16};
-               nframes x {w u16 (a multiple of 8), h u16, offset u32}; pixels (4-byte aligned)
+               nframes x {w u16 (a multiple of 8), h u16, offset u32, dx s16, dy s16}; pixels
+               (4-byte aligned). R5: each frame is cut to its visible pixels; (dx, dy) is where
+               the cut picture sits in the uncut one, in pixels (dx even) - "STXS" had no cut
                - every sprite of supertux.strf plus EXTRA_SPRITES (logo, world map Tux, level
                dots, snow, cloud, ...)
   FONTS.BIN    SuperTux's letters (write_fonts)
@@ -72,6 +74,10 @@ SCALE_N, SCALE_D = 1, 2
 TILE = 32 * SCALE_N // SCALE_D            # 16
 # the unsharp mask after halving (PIL ImageFilter.UnsharpMask: radius, percent, threshold)
 SHARPEN = (1.0, 110, 2)
+# R5: Micronut99 preferred the backgrounds as they were ("let go back to the original
+# backgrounds. I dont like the sharp"): the level backgrounds and the menu pages' pictures are
+# halved with Lanczos only. Tiles, sprites and the logo stay sharpened. True brings R2-R4 back.
+SHARPEN_BACKGROUNDS = False
 GLOBAL_COLOURS = 191       # 1..191
 BACK_FIRST = 192
 BACK_COLOURS = 64          # 192..255
@@ -296,12 +302,13 @@ def main():
             f.write(fr.tobytes())
     with open(os.path.join(outdir, "PALETTE.BIN"), "wb") as f:
         f.write(struct.pack(">H", 0x0400) + pal.words(GLOBAL_COLOURS))   # entries 0 (unused) and 1-191
-    write_sprites(outdir, pal, sprite_defs, sprite_arrs)
+    spr_saved = write_sprites(outdir, pal, sprite_defs, sprite_arrs)
     write_fonts(D, outdir, pal)
     write_pics(D, outdir)
     rep.append("scale 1/2 sharpened: tiles %d ids, %d frames of %dx%d = %d bytes; global colours used: %d"
                % (ntiles, len(tile_px), TILE, TILE, len(tile_px) * TILE * TILE, pal.count))
-    rep.append("sprites: %d (%d pictures)" % (len(sprite_defs), sum(len(v) for v in sprite_arrs)))
+    rep.append("sprites: %d (%d pictures), cut to their visible pixels: %d -> %d bytes"
+               % (len(sprite_defs), sum(len(v) for v in sprite_arrs), spr_saved[0], spr_saved[1]))
     for t, o in (("intro.txt", "INTRO.TXT"), ("extro.txt", "EXTRO.TXT"), ("extro-bonus.txt", "EXTRO1.TXT"),
                  ("extro-bonus2.txt", "EXTRO2.TXT"), ("CREDITS", "CREDITS.TXT")):
         p = os.path.join(D, t)
@@ -313,7 +320,8 @@ def main():
     bw, bh = 640 * SCALE_N // SCALE_D, 480 * SCALE_N // SCALE_D
     for nm in sorted(os.listdir(os.path.join(D, "images/background"))):
         im = Image.open(os.path.join(D, "images/background", nm)).convert("RGB").resize((bw, bh), Image.LANCZOS)
-        im = sharpen(im)
+        if SHARPEN_BACKGROUNDS:
+            im = sharpen(im)
         px, words = picture64(im)
         back_index[nm] = len(backs)
         backs.append((nm, px, words))
@@ -413,20 +421,41 @@ def main():
         print("previews: %d levels -> %s" % (len(previews), prevdir))
 
 
+def trimmed(idx, name):
+    """R5: a sprite picture cut down to its visible pixels (colour 0 is see-through), with the
+    cut-off left / top as an offset. Every cell a sprite touches is drawn again by the tiler in
+    the next frames, so the transparent margins cost real time: SuperTux's 32x32 snowflakes hold
+    6x5 to 9x8 visible pixels at half size and covered up to 4 cells each. The left offset is kept
+    even: yt_sprite rounds x down to even, so the pixels land exactly where the uncut picture put
+    them. The logo is not cut (the title centres it by its width)."""
+    if name == "logo" or os.environ.get("STX_NOTRIM"):   # STX_NOTRIM=1: uncut (to compare)
+        return idx, 0, 0
+    ys, xs = np.nonzero(idx)
+    if len(xs) == 0:
+        return np.zeros((2, 8), dtype=np.uint8), 0, 0
+    x0, y0 = int(xs.min()) & ~1, int(ys.min())
+    return idx[y0:int(ys.max()) + 1, x0:int(xs.max()) + 1], x0, y0
+
+
 def write_sprites(outdir, pal, defs, arrs):
-    """SPRITES.BIN (formats above). Every picture padded to a width that is a multiple of 8 and
-    4-byte aligned: YATSSD's 16-bit loop copies 32 bits at a time and never gets fewer than 4
-    units (its counter would wrap - Sonic32 T7)."""
+    """SPRITES.BIN (formats above). Every picture cut to its visible pixels (trimmed), padded to a
+    width that is a multiple of 8 and 4-byte aligned: YATSSD's 16-bit loop copies 32 bits at a
+    time and never gets fewer than 4 units (its counter would wrap - Sonic32 T7)."""
     entries, frames, pix = [], [], []
+    saved = [0, 0]
     for (name, ims, fps, hx, hy, fac), a in zip(defs, arrs):
         first = len(frames)
         for im in a:
-            p = padded(pal.index(im))
-            frames.append((p.shape[1], p.shape[0]))
+            full = pal.index(im)
+            cut, dx, dy = trimmed(full, name)
+            p = padded(cut)
+            saved[0] += padded(full).size
+            saved[1] += p.size
+            frames.append((p.shape[1], p.shape[0], dx, dy))
             pix.append(p.tobytes())
         entries.append((name, len(a), int(round(fps * 10)), hx, hy, first))
-    head = 8 + 36 * len(entries) + 8 * len(frames)
-    out = bytearray(b"STXS" + struct.pack(">HH", len(entries), len(frames)))
+    head = 8 + 36 * len(entries) + 12 * len(frames)
+    out = bytearray(b"STXT" + struct.pack(">HH", len(entries), len(frames)))
     for name, n, fps10, hx, hy, first in entries:
         out += name.encode()[:24].ljust(24, b"\0") + struct.pack(">HHhhHH", n, fps10, hx, hy, first, 0)
     off = (head + 3) & ~3
@@ -434,13 +463,14 @@ def write_sprites(outdir, pal, defs, arrs):
     for p in pix:
         offs.append(off)
         off = (off + len(p) + 3) & ~3
-    for (w, h), o in zip(frames, offs):
-        out += struct.pack(">HHI", w, h, o)
+    for (w, h, dx, dy), o in zip(frames, offs):
+        out += struct.pack(">HHIhh", w, h, o, dx, dy)
     for p, o in zip(pix, offs):
         out += b"\0" * (o - len(out)) + p
     out += b"\0" * ((-len(out)) & 3)
     with open(os.path.join(outdir, "SPRITES.BIN"), "wb") as f:
         f.write(out)
+    return saved
 
 
 def write_fonts(D, outdir, pal):
@@ -475,7 +505,9 @@ def write_pics(D, outdir):
     items = []
     for name, path in PICS:
         im = Image.open(os.path.join(D, "images", path)).convert("RGB").resize((320, 240), Image.LANCZOS)
-        im = sharpen(im).crop((0, (240 - VIEW_H) // 2, 320, (240 - VIEW_H) // 2 + VIEW_H))
+        if SHARPEN_BACKGROUNDS:
+            im = sharpen(im)
+        im = im.crop((0, (240 - VIEW_H) // 2, 320, (240 - VIEW_H) // 2 + VIEW_H))
         px, words = picture64(im)
         items.append((name, words + px.tobytes()))
     out = bytearray(b"STXP" + struct.pack(">HH", len(items), 0))

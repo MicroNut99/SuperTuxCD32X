@@ -138,6 +138,7 @@ enum {
 extern Sprite spr[S_N];
 /* a sprite's frame at time ms: w, h, pixels */
 const uint8_t *spr_frame(int s, uint32_t ms, int *w, int *h);
+const uint8_t *spr_frame_at(int s, uint32_t ms, int *w, int *h, int *dx, int *dy);   /* + where the cut picture sits */
 /* draw sprite s with its hot spot at world position (ux, uy) (units), camera (cx, cy) pixels */
 void spr_draw(int s, uint32_t ms, int ux, int uy, int cx, int cy);
 /* the first rows only (rising upgrades: draw_part) */

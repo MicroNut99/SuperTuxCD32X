@@ -13,6 +13,10 @@
  * vertically). Under the view: the panel (score, time, coins, lives, the level, the timing).
  */
 #include "stx.h"
+#ifndef OJ32X_MARS
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 
 PlayerStatus ps = { 0, 0, START_LIVES, 0 };
 fx scroll_x;
@@ -164,9 +168,16 @@ typedef struct { fx x, y, speed; uint8_t layer, img; } Particle;
 static Particle parts[NSNOW > NCLOUD ? NSNOW : NCLOUD];
 static int nparts, part_kind, part_vw;
 
+static void clouds_reset(void);   /* R5: the kept clouds (below, with the drawing) */
+static int view_cx, view_cy;           /* this frame's camera (half-size pixels) */
+static int drew_parallax;              /* the last frame was drawn with BACKGROUND MOVES */
+
 static void particles_start(void)
 {
 	part_kind = lparticles;
+#ifndef OJ32X_MARS
+	if (getenv("ST_NOPARTICLES")) part_kind = 0;      /* PC only: to measure what the particles cost */
+#endif
 	nparts = 0;
 	if (part_kind == 1)
 	{
@@ -186,6 +197,7 @@ static void particles_start(void)
 	}
 	else if (part_kind == 2)
 	{
+		clouds_reset();
 		part_vw = 2000;
 		for (int i = 0; i < NCLOUD; i++)
 		{
@@ -221,6 +233,20 @@ static void particles_step(void)
 	}
 }
 
+/* R5: a far snowflake (behind the level's tiles) is drawn only where the cells under it hold
+ * no tile at all (layers 1-3): over a tile it would be hidden anyway, and R3/R4 paid for that by
+ * drawing the tiles of its cells again over it (overlay_cells) - and the tiler those cells
+ * again in the next frame. A flake can now vanish up to a cell early at the edge of a tile with
+ * see-through parts; at this size and speed that does not show. */
+static int far_flake_hidden(int vx, int vy, int w, int h)
+{
+	const int cx = view_cx, cy = view_cy;
+	for (int ty = (vy + cy) / YT_TILE; ty <= (vy + h - 1 + cy) / YT_TILE; ty++)
+		for (int tx = (vx + cx) / YT_TILE; tx <= (vx + w - 1 + cx) / YT_TILE; tx++)
+			if (level_tile(1, tx, ty) || level_tile(2, tx, ty) || level_tile(3, tx, ty)) return 1;
+	return 0;
+}
+
 static void particles_draw(int layer)
 {
 	const int sx = FX_INT(scroll_x);
@@ -232,9 +258,11 @@ static void particles_draw(int layer)
 		if (x < 0) x += part_vw;
 		if (x > VIEW_W_U) x -= part_vw;
 		const int s = part_kind == 1 ? S_SNOW0 + p->img : S_CLOUD;
-		int w, h;
-		const uint8_t *px = spr_frame(s, 0, &w, &h);
-		yt_sprite(px_of(x), px_of(FX_INT(p->y)), w, h, px);
+		int w, h, dx, dy;
+		const uint8_t *px = spr_frame_at(s, 0, &w, &h, &dx, &dy);
+		const int vx = px_of(x) + dx, vy = px_of(FX_INT(p->y)) + dy;
+		if (layer == 0 && part_kind == 1 && !drew_parallax && far_flake_hidden(vx, vy, w, h)) continue;
+		yt_sprite(vx, vy, w, h, px);
 	}
 }
 
@@ -422,7 +450,6 @@ static void world_start(int from_x)
 }
 
 /* ------------------------------------------------------------------ drawing */
-static int view_cx, view_cy;
 
 /* over the sprites logged since yt_rect_log(1): the cells under them get their layers from
  * `first` (1 background-tm, 2 interactive-tm, 3 foreground-tm) drawn again on top (the tiler's
@@ -477,7 +504,149 @@ static void tiles_over_back(int first, int last, int cx, int cy)
 			}
 }
 
-static int drew_parallax;
+/* R5: the clouds are KEPT in the canvas. A cloud is 64 x 32 pixels, behind the level's tiles,
+ * fixed in the world sideways and drifting slowly (12-22 pixels a second). R3/R4 drew each
+ * cloud as an ordinary sprite: its 10-15 cells were drawn again by the tiler in the next frame
+ * of that buffer, the cloud again, and the level's tiles over it again (overlay_cells) - every
+ * frame, the most expensive picture in 14 levels (N 75-115).
+ *
+ * Now each buffer keeps its clouds in its canvas - the whole canvas, also the columns and lines
+ * around the view, so a cloud at the edge of the view needs nothing when the view scrolls:
+ *   - a cloud that moved (its 2-pixel steps; up / down with the camera) or came in: its old
+ *     cells are marked (the tiler draws them clean) and it is drawn whole;
+ *   - a cloud that did not move: drawn again only in the cells the tiler drew under it this
+ *     frame (Tux went past, a coin turned, a cloud in front moved away) - cut to their box;
+ *   - in the order of the clouds (the later one in front): a cloud drawn over another one's
+ *     cells makes the ones in front of it draw again there;
+ *   - then the level's tiles are drawn again over every cell that got cloud pixels.
+ * Each buffer remembers where it drew each cloud (world pixels). A cloud's x is kept even in
+ * the canvas so that a part drawn in a box lands on the same pixels as the whole cloud. */
+typedef struct { int16_t x, y, x0, y0, x1, y1; uint8_t valid; } CloudSeen;
+static CloudSeen cseen[2][NCLOUD];
+static CloudSeen cnow[NCLOUD];
+static uint8_t cneed[NCLOUD];
+#define CW_MAX 40
+static int16_t cw_ids[NCLOUD][CW_MAX], cw_vals[NCLOUD][CW_MAX];
+static uint8_t cw_n[NCLOUD];
+static int16_t c_vx[NCLOUD], c_vy[NCLOUD];
+static uint8_t c_changed[YT_CELLS], c_touched[YT_CELLS];
+
+static void clouds_reset(void)
+{
+	memset(cseen, 0, sizeof cseen);
+	yt_invalidate();                   /* both buffers drawn clean: no cloud left from before */
+}
+
+/* the canvas around the view, in view pixels (yt_begin: the view starts at canvas column
+ * cx % 64, line cy % 16; the canvas is 384 x 192) - kept pictures are drawn into all of it */
+#define CANVAS_LINES (YT_ROWS / YT_TILE * YT_TILE)
+static int kx0(int cx) { return -(cx % YT_SCROLL_X); }
+static int ky0(int cy) { return -(cy % YT_SCROLL_Y); }
+
+/* after yt_begin, before yt_layers */
+static void clouds_before(int cx, int cy)
+{
+	const int b = plat_back_index() & 1;
+	const int sx = FX_INT(scroll_x);
+	const int L = kx0(cx), T = ky0(cy), R = L + YT_PITCH, B = T + CANVAS_LINES;
+	int w, h, dx, dy;
+	spr_frame_at(S_CLOUD, 0, &w, &h, &dx, &dy);
+	for (int i = 0; i < nparts; i++)
+	{
+		const Particle *p = &parts[i];
+		int x = (FX_INT(p->x) - sx) % part_vw;
+		if (x < 0) x += part_vw;
+		if (x > VIEW_W_U) x -= part_vw;
+		/* as particles_draw, with the canvas column made even (yt_sprite would round it down) */
+		const int vx = ((px_of(x) + dx - L) & ~1) + L, vy = px_of(FX_INT(p->y)) + dy;
+		c_vx[i] = (int16_t)vx; c_vy[i] = (int16_t)vy;
+		CloudSeen *n = &cnow[i];
+		n->x = (int16_t)(vx + cx);        /* world pixels */
+		n->y = (int16_t)(vy + cy);
+		const int x0 = vx < L ? L : vx, x1 = vx + w > R ? R : vx + w;   /* cut to the canvas */
+		const int y0 = vy < T ? T : vy, y1 = vy + h > B ? B : vy + h;
+		n->valid = x1 > x0 && y1 > y0;
+		n->x0 = (int16_t)(x0 + cx); n->x1 = (int16_t)(x1 + cx);
+		n->y0 = (int16_t)(y0 + cy); n->y1 = (int16_t)(y1 + cy);
+		const CloudSeen *o = &cseen[b][i];
+		cneed[i] = !o->valid || o->x != n->x || o->y != n->y || o->x0 != n->x0 || o->x1 != n->x1
+		           || o->y0 != n->y0 || o->y1 != n->y1;
+		/* moved: the cells it was drawn on are drawn clean (first all marks, then the watches -
+		 * a mark after a watch would hide a change from it) */
+		if (cneed[i] && o->valid)
+			yt_mark_view_rect(o->x0 - cx, o->y0 - cy, o->x1 - o->x0, o->y1 - o->y0);
+	}
+	for (int i = 0; i < nparts; i++)
+	{
+		const CloudSeen *n = &cnow[i];
+		cw_n[i] = n->valid ? (uint8_t)yt_watch(n->x0 - cx, n->y0 - cy, n->x1 - n->x0, n->y1 - n->y0,
+		                                         cw_ids[i], cw_vals[i], CW_MAX) : 0;
+	}
+}
+
+/* after yt_layers: the clouds that need it, then the level's tiles over them - without marks */
+static void clouds_draw(int cx, int cy)
+{
+	const int b = plat_back_index() & 1;
+	memset(c_changed, 0, sizeof c_changed);
+	memset(c_touched, 0, sizeof c_touched);
+	for (int i = 0; i < nparts; i++)
+		if (cnow[i].valid) yt_watch_changed(cw_ids[i], cw_vals[i], cw_n[i], c_changed);
+	int w, h, dx, dy;
+	const uint8_t *px = spr_frame_at(S_CLOUD, 0, &w, &h, &dx, &dy);
+	yt_keep(1);
+	for (int i = 0; i < nparts; i++)
+	{
+		if (!cnow[i].valid) continue;
+		if (cneed[i])
+		{
+			yt_keep_box(-YT_PITCH, -YT_ROWS, 3 * YT_PITCH, 3 * YT_ROWS);   /* the whole canvas */
+			yt_sprite(c_vx[i], c_vy[i], w, h, px);
+			for (int k = 0; k < cw_n[i]; k++) c_touched[cw_ids[i][k]] = 1;
+			continue;
+		}
+		/* not moved: the box of its cells that the tiler drew or a cloud behind it covered */
+		int bx0 = 1 << 14, by0 = 1 << 14, bx1 = -(1 << 14), by1 = -(1 << 14);
+		for (int k = 0; k < cw_n[i]; k++)
+		{
+			const int id = cw_ids[i][k];
+			if (!c_changed[id] && !c_touched[id]) continue;
+			int x, y;
+			yt_cell_box(id, &x, &y);
+			if (x < bx0) bx0 = x;
+			if (y < by0) by0 = y;
+			if (x + YT_TILE > bx1) bx1 = x + YT_TILE;
+			if (y + YT_TILE > by1) by1 = y + YT_TILE;
+		}
+		if (bx1 <= bx0) continue;
+		yt_keep_box(bx0, by0, bx1 - bx0, by1 - by0);
+		yt_sprite(c_vx[i], c_vy[i], w, h, px);
+		for (int k = 0; k < cw_n[i]; k++)            /* every cell of it inside the box */
+		{
+			int x, y;
+			yt_cell_box(cw_ids[i][k], &x, &y);
+			if (x >= bx0 && x < bx1 && y >= by0 && y < by1) c_touched[cw_ids[i][k]] = 1;
+		}
+	}
+	/* the level's tiles over every cell that got cloud pixels (tile_draw: a whole cell) */
+	yt_keep(1);
+	const int ctx = YT_PITCH / YT_TILE;
+	const int tx0 = (cx + kx0(cx)) / YT_TILE, ty0 = (cy + ky0(cy)) / YT_TILE;   /* canvas cell 0 */
+	for (int id = 0; id < YT_CELLS; id++)
+	{
+		if (!c_touched[id]) continue;
+		const int tx = tx0 + id % ctx, ty = ty0 + id / ctx;
+		for (int l = 1; l <= 3; l++)
+		{
+			const int t = level_tile(l, tx, ty);
+			if (t) tile_draw(t, game_ms, tx * 32, ty * 32, cx, cy);
+		}
+	}
+	yt_keep(0);
+	for (int i = 0; i < nparts; i++) cseen[b][i] = cnow[i];
+}
+
+static uint32_t stat_cells;            /* the cells the tiler drew this frame (N) */
 
 void game_draw_world(void)
 {
@@ -513,14 +682,13 @@ void game_draw_world(void)
 		return;
 	}
 	level_mark_animated(cx, cy);
-	tiles_acc += (uint32_t)yt_layers(0, 0);          /* the merged pictures */
+	if (part_kind == 2) clouds_before(cx, cy);
+	stat_cells = (uint32_t)yt_layers(0, 0);          /* the merged pictures */
+	tiles_acc += stat_cells;
 	t1 = plat_prof_us(); tacc[T_TILES] += t1 - t0; t0 = t1;
-	if (nparts)
-	{
-		yt_rect_log(1);
-		particles_draw(0);                           /* clouds, the far snow ... */
-		overlay_cells(1, cx, cy);                    /* ... behind the level's tiles */
-	}
+	if (part_kind == 2) clouds_draw(cx, cy);         /* R5: kept, drawn again only when needed */
+	else if (nparts)
+		particles_draw(0);                           /* the far snow: only where no tile is (R5) */
 	yt_rect_log(1);
 	objects_draw_back(cx, cy, game_ms);
 	tux_draw(cx, cy, game_ms, global_frame);
@@ -765,6 +933,16 @@ int game_play(int li)
 		game_draw_world();
 		draw_status();
 		timing_frame();
+#ifndef OJ32X_MARS
+		if (getenv("ST_STATS"))
+		{
+			/* PC only: what this frame drew - the merged cells, the sprites and their pixels */
+			extern uint32_t yt_stat_spr, yt_stat_px;
+			static uint32_t f;
+			fprintf(stderr, "STAT %u %u %u %u %d %d\n", f++, stat_cells, yt_stat_spr, yt_stat_px, view_cx, view_cy);
+		}
+		{ extern uint32_t yt_stat_spr, yt_stat_px; yt_stat_spr = yt_stat_px = 0; }
+#endif
 		present_view();
 	}
 	if (exit_status == ES_LEVEL_FINISHED)

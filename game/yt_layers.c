@@ -13,6 +13,8 @@
  *     other user in this boot path (cd32x/subcpu/hw_md.s line 1307 is a nop - OpenLara's fix)
  *   - HwMd*() (Genesis planes): not used
  * The tile drawing itself and the dirty matrix are Vic's draw_handle_layercmd(), unchanged.
+ * R5: the cells are listed here and drawn with Vic's pixel loop on both SH2s (yt_layer below);
+ * draw_handle_layercmd is still there with YT_VIC_TILER.
  *
  * Built for the 32X (with yatssd/dtiles.c, dsprite.c, draw.c) and for the PC (with
  * game/yt_host.c, which stands in for those three).
@@ -191,6 +193,43 @@ void yt_begin(int cx, int cy)
 int yt_scroll_x(void) { return scroll_x; }
 int yt_scroll_y(void) { return scroll_y; }
 
+/* R5: the cells to draw this frame, listed by the master in one pass over the view (the rule of
+ * Vic's draw_handle_layercmd, base layer: a cell is drawn when the dirty matrix does not hold the
+ * tile it should show), then drawn by both SH2s - each takes every second cell of the list.
+ * R3 ran Vic's draw_handle_layercmd on both CPUs: for EVERY cell of the view (about 260, also the
+ * unchanged ones) each CPU took the next cell number from COMM6 under his TAS lock - two
+ * locked, uncached accesses and a register round trip a cell, whether it was drawn or not. Now
+ * the unchanged cells cost one read of the dirty matrix, and with only a few cells to draw the
+ * second SH2 is not started at all. Each cell is drawn with Vic's pixel loop
+ * (draw_handle_drawspritecmd, exactly what his draw_drawtile does for the base layer). Define
+ * YT_VIC_TILER to go back to R3's way. */
+#ifndef YT_VIC_TILER
+typedef struct { int16_t x, y; int16_t idx; int16_t pad; } YtCell;
+#define YT_MAX_CELLS (YT_PITCH / YT_TILE * (YT_ROWS / YT_TILE + 1))
+static YtCell cell_list[YT_MAX_CELLS];
+#define YT_SOLO_CELLS 4                /* up to this many: the master alone (no slave start) */
+
+static void draw_cell(const YtCell *c)
+{
+	drawsprcmd_t cmd;
+	cmd.flags = (uint16_t)(c->idx & 3);    /* base layer: drawmode 0 | the tile's flip bits */
+	cmd.x = (uint16_t)c->x; cmd.y = (uint16_t)c->y;
+	cmd.w = YT_TILE; cmd.h = YT_TILE;
+	cmd.sx = 0; cmd.sy = 0;
+	cmd.sw = YT_TILE; cmd.sh = YT_TILE;
+	cmd.sdata = (void *)((uint8_t **)tm.reslist)[c->idx >> 2];
+	cmd.scale = 0;
+	cmd.stride = 0;
+	draw_handle_drawspritecmd(&cmd);
+}
+
+typedef struct { int n; } CellsJob;
+static void cells_job(void *arg, int which)
+{
+	const int n = ((const CellsJob *)arg)->n;
+	for (int i = which & 1; i < n; i += 2) draw_cell(&cell_list[i]);
+}
+#else
 typedef struct { drawtilelayerscmd_t *cmd; int n[2]; } TilesJob;
 static void tiles_job(void *arg, int which)
 {
@@ -211,6 +250,7 @@ static int job_count(TilesJob *j)
 	return j->n[0] + j->n[1];
 #endif
 }
+#endif
 
 static int yt_layer(int layer)
 {
@@ -248,6 +288,7 @@ static int yt_layer(int layer)
 	cmd.camera_y = cam_y;
 	cmd.drawmode = layer == 0 ? 0 : (DRAWSPR_PRECISE | DRAWSPR_OVERWRITE);   /* as draw_tile_layer */
 	cmd.parallax = 0;
+#ifdef YT_VIC_TILER
 	/* R3: both SH2s, as YATSSD's own draw_tile_layer does it - draw_handle_layercmd hands out
 	 * the cells through Vic's counter in COMM6 (get_next_tile, under his TAS lock), so each
 	 * CPU draws the cells it takes. The second CPU runs the same call through the platform
@@ -259,6 +300,41 @@ static int yt_layer(int layer)
 	yt_tile_counter_reset();
 	plat_parallel(tiles_job, &job);
 	return job_count(&job);
+#else
+	/* R5: the same walk as draw_handle_layercmd's non-parallax branch (base layer), listing the
+	 * cells instead of drawing them; the dirty matrix is updated here, by the master only */
+	if (layer != 0) return 0;              /* R3 on: one merged layer */
+	int16_t *dirty = yt_extrafb() + 3;
+	const int16_t *tiles = (const int16_t *)tm.layers[0].tiles;
+	const int16_t *last_layer = (const int16_t *)tm.layers[tm.numlayers - 1].tiles;
+	const int cth = (int)tm.canvas_tiles_hor;
+	int n = 0, stid = cmd.scroll_tile_id, y = cmd.y;
+	for (int y_tile = start_tile; y_tile < end_tile; y_tile += (int)tm.tiles_hor)
+	{
+		int id = stid, x = cmd.x;
+		for (int tile = y_tile; tile < y_tile + (int)cmd.num_tiles_x; tile++, id++, x += (int)w)
+		{
+			const int16_t idx = tiles[tile];
+			const int16_t have = dirty[id];
+			if (have != idx && (idx != 0 || last_layer[tile] != have) && n < YT_MAX_CELLS)
+			{
+				dirty[id] = idx;
+				cell_list[n].x = (int16_t)(x + window_canvas_x);
+				cell_list[n].y = (int16_t)(y + window_canvas_y);
+				cell_list[n].idx = idx;
+				n++;
+			}
+		}
+		y += (int)h;
+		stid += cth;
+		if (y >= (int)canvas_pitch) break;
+	}
+	CellsJob job;
+	job.n = n;
+	if (n <= YT_SOLO_CELLS) { cells_job(&job, 0); cells_job(&job, 1); }
+	else plat_parallel(cells_job, &job);
+	return n;
+#endif
 }
 
 int yt_layers(int first, int last)
@@ -291,6 +367,78 @@ static void mark_cells(int x, int y, int w, int h)
 }
 
 static int rect_log_on, rect_n;
+static int no_mark;                    /* R5: yt_keep(1) - draw without marking (kept clouds) */
+/* R5: kept pictures are drawn into the whole canvas, not only the view: a cloud cut by the edge
+ * of the view would otherwise have to be drawn again at every step of the view (the part that
+ * scrolls in). The canvas cells around the view keep what is drawn in them until the tiler
+ * draws them again (then the watch notices) or a re-anchor drops them. */
+static int kb_x0, kb_y0, kb_x1, kb_y1;  /* the box kept pictures are cut to (view pixels) */
+void yt_keep_box(int vx, int vy, int w, int h)
+{
+	/* inside the canvas */
+	kb_x0 = vx < -window_canvas_x ? -window_canvas_x : vx;
+	kb_y0 = vy < -window_canvas_y ? -window_canvas_y : vy;
+	kb_x1 = vx + w > YT_PITCH - window_canvas_x ? YT_PITCH - window_canvas_x : vx + w;
+	kb_y1 = vy + h > CANVAS_H - window_canvas_y ? CANVAS_H - window_canvas_y : vy + h;
+	if (kb_x1 < kb_x0) kb_x1 = kb_x0;
+	if (kb_y1 < kb_y0) kb_y1 = kb_y0;
+	draw_setScissor((int16_t)kb_x0, (int16_t)kb_y0, (int16_t)(kb_x1 - kb_x0), (int16_t)(kb_y1 - kb_y0));
+}
+void yt_keep(int on)
+{
+	no_mark = on;
+	if (on) yt_keep_box(-window_canvas_x, -window_canvas_y, YT_PITCH, CANVAS_H);
+	else draw_setScissor(0, 0, YT_VIEW_W, YT_VIEW_H);
+}
+
+/* R5: the canvas cells under a view rectangle (any part of it inside the canvas, also outside
+ * the view): their numbers into ids[] (at most max), returns how many */
+static int cells_under(int vx, int vy, int w, int h, int16_t *ids, int max)
+{
+	if (!tm.tw || w <= 0 || h <= 0) return 0;
+	const int ctx = (int)tm.canvas_tiles_hor, cty = (int)tm.canvas_tiles_ver;
+	int x0 = window_canvas_x + vx, y0 = window_canvas_y + vy, x1 = x0 + w - 1, y1 = y0 + h - 1;
+	if (x0 < 0) x0 = 0;
+	if (y0 < 0) y0 = 0;
+	if (x1 >= ctx * YT_TILE) x1 = ctx * YT_TILE - 1;
+	if (y1 >= cty * YT_TILE) y1 = cty * YT_TILE - 1;
+	int n = 0;
+	for (int r = y0 / YT_TILE; r <= y1 / YT_TILE && y0 <= y1; r++)
+		for (int c = x0 / YT_TILE; c <= x1 / YT_TILE && x0 <= x1; c++)
+			if (n < max) ids[n++] = (int16_t)(r * ctx + c);
+	return n;
+}
+
+void yt_mark_view_rect(int vx, int vy, int w, int h)
+{
+	int16_t ids[64];
+	int16_t *dirty = yt_extrafb() + 3;
+	const int n = cells_under(vx, vy, w, h, ids, 64);
+	for (int i = 0; i < n; i++) dirty[ids[i]] = -1;
+}
+
+int yt_watch(int vx, int vy, int w, int h, int16_t *ids, int16_t *vals, int max)
+{
+	const int16_t *dirty = yt_extrafb() + 3;
+	const int n = cells_under(vx, vy, w, h, ids, max);
+	for (int i = 0; i < n; i++) vals[i] = dirty[ids[i]];
+	return n;
+}
+
+int yt_watch_changed(const int16_t *ids, const int16_t *vals, int n, uint8_t *cells)
+{
+	const int16_t *dirty = yt_extrafb() + 3;
+	int k = 0;
+	for (int i = 0; i < n; i++) if (dirty[ids[i]] != vals[i]) { cells[ids[i]] = 1; k++; }
+	return k;
+}
+
+void yt_cell_box(int id, int *vx, int *vy)
+{
+	const int ctx = (int)tm.canvas_tiles_hor ? (int)tm.canvas_tiles_hor : YT_PITCH / YT_TILE;
+	*vx = (id % ctx) * YT_TILE - window_canvas_x;
+	*vy = (id / ctx) * YT_TILE - window_canvas_y;
+}
 static int16_t rect_xy[YT_RECTS][4];
 
 void yt_rect_log(int on) { rect_log_on = on; if (on) rect_n = 0; }
@@ -300,10 +448,20 @@ void yt_rect(int i, int *x, int *y, int *w, int *h)
 	*x = rect_xy[i][0]; *y = rect_xy[i][1]; *w = rect_xy[i][2]; *h = rect_xy[i][3];
 }
 
+#ifndef OJ32X_MARS
+uint32_t yt_stat_spr, yt_stat_px;      /* PC only (ST_STATS): sprites and their pixels a frame */
+#define STAT(n, px) (yt_stat_spr += (n), yt_stat_px += (uint32_t)(px))
+#else
+#define STAT(n, px) ((void)0)
+#endif
+
 int yt_sprite(int vx, int vy, int w, int h, const uint8_t *pixels)
 {
-	const int x0 = vx < 0 ? 0 : vx, x1 = vx + w > YT_VIEW_W ? YT_VIEW_W : vx + w;
-	const int y0 = vy < 0 ? 0 : vy, y1 = vy + h > YT_VIEW_H ? YT_VIEW_H : vy + h;
+	/* the area a sprite may cover: the view; kept pictures (yt_keep): the whole canvas */
+	const int bx0 = no_mark ? kb_x0 : 0, bx1 = no_mark ? kb_x1 : YT_VIEW_W;
+	const int by0 = no_mark ? kb_y0 : 0, by1 = no_mark ? kb_y1 : YT_VIEW_H;
+	const int x0 = vx < bx0 ? bx0 : vx, x1 = vx + w > bx1 ? bx1 : vx + w;
+	const int y0 = vy < by0 ? by0 : vy, y1 = vy + h > by1 ? by1 : vy + h;
 	if (x1 <= x0 || y1 <= y0) return 0;
 	if (x1 - x0 < 8 || y1 - y0 < 2)
 	{
@@ -316,7 +474,8 @@ int yt_sprite(int vx, int vy, int w, int h, const uint8_t *pixels)
 			uint8_t *d = canvas + (window_canvas_y + y) * CANVAS_W + window_canvas_x + x0;
 			for (int x = 0; x < x1 - x0; x++) if (s[x]) d[x] = s[x];
 		}
-		mark_cells(window_canvas_x + x0, window_canvas_y + y0, x1 - x0, y1 - y0);
+		if (!no_mark) mark_cells(window_canvas_x + x0, window_canvas_y + y0, x1 - x0, y1 - y0);
+		STAT(1, (x1 - x0) * (y1 - y0));
 		return 1;
 	}
 	rect_t clip;
@@ -337,6 +496,8 @@ int yt_sprite(int vx, int vy, int w, int h, const uint8_t *pixels)
 	cmd.scale = 0;
 	cmd.stride = 0;
 	draw_handle_drawspritecmd(&cmd);
+	STAT(1, cw * ch);
+	if (no_mark) return 1;
 	mark_cells(x, y, cw, ch);           /* the cells under it, in this buffer's dirty matrix */
 	if (rect_log_on && rect_n < YT_RECTS)
 	{
