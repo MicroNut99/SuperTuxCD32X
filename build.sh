@@ -12,6 +12,8 @@ trap 'echo; echo "*** BUILD FAILED at line $LINENO: $BASH_COMMAND"; echo "*** lo
 SRC="${SUPERTUX:-$HERE/SuperTux-0.1.3}"
 OUT="$HERE/build"
 
+echo "==> boot path check (must be Hurrican CD32X's, unchanged; diagnostics on)"
+python3 "$HERE/tools/check_boot.py"
 python3 -c "import numpy, PIL" 2>/dev/null \
   || { echo "*** Python needs numpy and Pillow: sudo apt install python3-numpy python3-pil - stopping"; exit 1; }
 [ -f "$SRC/data/images/tilesets/supertux.stgt" ] || "$HERE/tools/stx_fetch.sh" "$SRC"

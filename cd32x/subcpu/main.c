@@ -90,7 +90,7 @@ extern int do_md_cmd3(int cmd, int arg1, int arg2, int arg3);
    0 = print_diag() prints nothing at all: every print_diag() call stays in the code, so
    setting 1 again brings all the text back.  (Chilly's white 32X start-up messages come
    from hw_md.s and are not affected.) */
-#define KOBO_DIAG_TEXT        0          /* OJ-J4B: on - green diagnostic text (CD32X boot handoff: diagnostics = 1) */
+#define KOBO_DIAG_TEXT        1          /* OJ-J4B: on - green diagnostic text (CD32X boot handoff: diagnostics = 1) */
 
 /* K30 - BOOT TEXT.  0 = the Genesis display is switched OFF at the very start of main(), so
    neither the green text nor Chilly's white 32X start-up messages appear (dev request): the

@@ -15,6 +15,30 @@ github.com/MicroNut99/SuperTuxCD32X.
 - **Vic's tiler for drawing:** YATSSD (`yatssd/`, MIT): tile maps of any size, several layers
   with parallax, dirty rectangles, the hardware 1-pixel shift, both SH2s drawing, sprites.
 
+## The boot path - never edited
+
+Rule taken over from Hurrican (its first benchmark disc, with an edited boot path, gave a black
+screen; with the boot path byte for byte as the last proven disc, it booted): `cd32x/`, `port/`,
+`tools/make_oj_rom.py`, `tools/make_boot_image.py`, `tools/mars_boot.bin` are Hurrican CD32X's
+(commit 37852a6), unchanged. New code runs only from `main()` and uses the platform layer's
+existing calls. `tools/check_boot.py` (run first by build.sh) compares every one of those files
+with `docs/BOOT_FILES.md5` (Hurrican's) and stops the build on any difference.
+
+**Diagnostics ON** (Micronut99: the Sega CD may not boot; without the text nothing can be
+diagnosed). Hurrican had them off (release). The documented switches, nothing else:
+
+| Switch | File | Hurrican | Here | Shows |
+|---|---|---|---|---|
+| `OJ_DIAG_TEXT` | `cd32x/sh2/cdloader_sh2.c` | 0 | **1** | the loader switches the Genesis text on (CMD 52) and draws it in front of the splash |
+| `KOBO_DIAG_TEXT` | `cd32x/subcpu/main.c` | 0 | **1** | the Sub-CPU's green text (STATE codes, file names, checkpoints) |
+| `KOBO_BOOT_TEXT` | `cd32x/subcpu/main.c` | 1 | 1 | Chilly's white 32X start-up messages (already on) |
+| `SCD_DIAG_TEXT` | `cd32x/subcpu/scd.c` | 0 | **1** | the green CKPT / INITCD lines and the CD error / root-directory lists |
+| `OJ32X_DIAG_TEXT` | `port/plat_mars.c` (build flag `-DOJ32X_DIAG_TEXT=1` in mars/, R1b) | 0 | **1** | the text stays until the engine's C++ start-up has worked |
+
+Not changed (part of the boot path): `cd32x/subcpu/hw_md.s` switches the Genesis display OFF at
+the end of the 68000's set-up (OL-13), so the white messages written before the SH2 loader runs
+are in video RAM but not visible until the loader's CMD 52 turns the display on.
+
 ## Facts that shape the design
 
 - **No floating point, as in Hurrican:** SuperTux 0.1.3's physics are float (`physic.cpp`,
