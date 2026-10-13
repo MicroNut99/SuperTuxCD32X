@@ -606,7 +606,9 @@ int main(int argc, char *argv[])
 	plat_border_colour(0);
 	ps_reset();
 #ifndef OJ32X_MARS
-	/* PC checks: straight into a level (ST_LEVEL) or a world map (ST_MAP) */
+	/* PC checks: straight into a level (ST_LEVEL) or a world map (ST_MAP); ST_TIMING=1 the
+	 * timing line */
+	if (getenv("ST_TIMING")) opt_timing = 1;
 	if (getenv("ST_LEVEL")) { for (;;) play_alone(atoi(getenv("ST_LEVEL"))); }
 	if (getenv("ST_MAP")) { for (;;) wmap_run(atoi(getenv("ST_MAP")), 0); }
 #endif

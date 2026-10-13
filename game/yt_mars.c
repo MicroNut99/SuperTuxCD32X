@@ -27,6 +27,47 @@ void yt_picture(const uint8_t *pixels)
 		for (int x = 0; x < YT_VIEW_W / 4; x++) d[x] = s[x];
 }
 
+/* ---- game/level.c's reader: the boot path's commands, sent as port/plat_mars.c's
+ * plat_load_pack sends them (that function always copies a whole file to 0x280000 and reads the
+ * splash picture from the disc twice first, for its loading screen):
+ *   38  COMM2 = file (9: IMAGE9.RAW -> cart slot 9 = 0x120000; 200 + k: OJk.PAK -> 0x280000);
+ *       reply: the file's length in COMM8 (32 bits)
+ *   46  COMM2 = piece c | 0x8000 (no read-back), COMM8 = the length: 32 KB from the disc to
+ *       slot + c x 32 KB (cd32x/subcpu/main.c); reply COMM12 = 0 ok
+ * The progress call may draw and read the pad (which replies in COMM8), so the length is put
+ * back before each piece. Afterwards the SH2's cache is purged: the 68000 wrote the cart. */
+#define C_COMM0  (*(volatile uint16_t *)0x20004020)
+#define C_COMM2  (*(volatile uint16_t *)0x20004022)
+#define C_COMM8L (*(volatile uint32_t *)0x20004028)
+#define C_COMM12 (*(volatile uint16_t *)0x2000402C)
+static int c_cmd(uint16_t c)
+{
+	C_COMM0 = c;
+	for (uint32_t n = 0; n < 2000000u && C_COMM0 != 0; n++)
+		for (volatile int k = 0; k < 64; k++) { }
+	return C_COMM0 == 0;
+}
+
+int cart_load(int fid, uint32_t flen, int first, int n, void (*progress)(int done, int total))
+{
+	C_COMM2 = (uint16_t)fid;
+	C_COMM8L = 0;
+	if (!c_cmd(38)) return 0;
+	const uint32_t len = C_COMM8L;
+	if (len != flen) return 0;
+	int bad = 0;
+	for (int c = first; c < first + n; c++)
+	{
+		C_COMM8L = len;
+		C_COMM2 = (uint16_t)(c | 0x8000);
+		C_COMM12 = 0;
+		if (!c_cmd(46) || C_COMM12 != 0) bad++;
+		if (progress) progress(c - first + 1, n);
+	}
+	*(volatile uint8_t *)0xFFFFFE92 = 0x11;   /* purge the cache: the 68000 wrote the cart */
+	return !bad;
+}
+
 /* dtiles.c's init_tilemap() and draw_tile_layer() / draw_tilemap() refer to these YATSSD
  * hw_32x.c functions. They are not called in this port (game/yt_layers.c replaces those three
  * functions); if one ever were, the error screen names it instead of the program running on. */

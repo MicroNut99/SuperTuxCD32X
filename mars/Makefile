@@ -81,6 +81,18 @@ $(OBJDIR)/crt0_oj.o: $(PORT)/mars/crt0_oj.s
 	@mkdir -p $(OBJDIR)
 	$(CC) $(ARCH) -c $< -o $@
 
+# R3: the game's busy code runs from SDRAM, not from the cart (the SH2 fetches cart ROM slowly,
+# and its 4 KB cache is shared with Vic's loops): the rules, the level, Tux, the bad guys, the
+# drawing calls. Compiled without the loop / jump / label alignments (in .data the assembler
+# pads with 0x0000 - see YT_CFLAGS) and without -ffunction-sections, then .text renamed into
+# .data (the linker script copies .data to SDRAM). tools/check_sdram_code.py checks them too.
+HOT_OBJS := $(addprefix $(OBJDIR)/,res.o level.o tux.o objects.o game.o yt_layers.o)
+HOT_CFLAGS := $(filter-out -ffunction-sections,$(GAME_CFLAGS)) -fno-align-loops -fno-align-jumps -fno-align-labels -fno-align-functions
+$(HOT_OBJS): $(OBJDIR)/%.o: $(GAME)/%.c
+	@mkdir -p $(OBJDIR)
+	$(CC) $(HOT_CFLAGS) -c $< -o $@.text.o
+	$(TC)objcopy --rename-section .text=.data.hot_$* $@.text.o $@
+	@rm -f $@.text.o
 $(OBJDIR)/%.o: $(GAME)/%.c
 	@mkdir -p $(OBJDIR)
 	$(CC) $(GAME_CFLAGS) -c $< -o $@

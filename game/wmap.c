@@ -31,9 +31,8 @@ static const uint8_t *map_bin;
 static int map_w, map_h, map_track, map_sx, map_sy, map_nl;
 static const uint8_t *map_tiles;       /* w*h big-endian tile ids */
 static MapLevel lv[MAX_MAP_LEVELS];
-static uint16_t wm_layer[MAX_MAP_CELLS], wm_zero[MAX_MAP_CELLS];
+static uint16_t wm_layer[MAX_MAP_CELLS];
 static uint8_t *wm_res[256];
-static const uint16_t *wm_layers[4];
 static int cur_map;
 
 /* Tux on the map (worldmap.cpp class Tux) */
@@ -96,7 +95,7 @@ static int tile_flags(int x, int y)
 	return t < wm_ntiles ? be16(wmt + 136 + 4 * t) : 0;
 }
 
-/* the map for the tiler: layer 0 its tiles (resource = tile id + 1), the others empty */
+/* the map for the tiler: one layer, its tiles (resource = tile id + 1) */
 static void map_show(void)
 {
 	for (int i = 0; i < 64; i++) palette[192 + i] = be16(wmt + 8 + 2 * i);
@@ -109,9 +108,7 @@ static void map_show(void)
 		if (t >= wm_ntiles || t >= 255) t = 0;
 		wm_layer[i] = (uint16_t)((t + 1) << 2);
 	}
-	wm_layers[0] = wm_layer;
-	wm_layers[1] = wm_layers[2] = wm_layers[3] = wm_zero;
-	yt_level(wm_layers, map_w, map_h, wm_res);
+	yt_level(wm_layer, map_w, map_h, wm_res);
 }
 
 static MapLevel *at_level(void)

@@ -154,10 +154,10 @@ void bumpbrick(int x, int y)           /* gameloop.cpp bumpbrick */
 
 /* ------------------------------------------------------------------ particles (particlesystem.cpp) */
 /* Snow: SuperTux makes 128 flakes over twice the screen's width; every flake drawn makes the
- * tiler redraw the cells under it in the next frame, so the 32X has 32 (the same density as
- * SuperTux's in view, a quarter of it). Clouds: 15 over 2000 units, as SuperTux. Both stay on
+ * tiler redraw the cells under it in the next frame (and the far ones get the level's tiles
+ * drawn over them again), so the 32X has 24 (R2: 32; a fifth of SuperTux's density). Clouds: 15 over 2000 units, as SuperTux. Both stay on
  * the screen while the level scrolls under them (x: virtual width, y: the view). */
-#define NSNOW   32
+#define NSNOW   24
 #define NCLOUD  15
 typedef struct { fx x, y, speed; uint8_t layer, img; } Particle;
 static Particle parts[NSNOW > NCLOUD ? NSNOW : NCLOUD];
@@ -423,6 +423,42 @@ static void world_start(int from_x)
 /* ------------------------------------------------------------------ drawing */
 static int view_cx, view_cy;
 
+/* over the sprites logged since yt_rect_log(1): the cells under them get their layers from
+ * `first` (1 background-tm, 2 interactive-tm, 3 foreground-tm) drawn again on top (the tiler's
+ * merged picture holds them all, under the sprite). Each cell once. */
+#define OV_W (YT_VIEW_W / YT_TILE + 2)
+#define OV_H (YT_VIEW_H / YT_TILE + 2)
+static uint8_t ov_done[OV_W * OV_H];
+static void overlay_cells(int first, int cx, int cy)
+{
+	const int nr = yt_rect_count();
+	yt_rect_log(0);                    /* the overlays are not logged */
+	if (!nr) return;
+	memset(ov_done, 0, sizeof ov_done);
+	const int tx0 = cx / YT_TILE, ty0 = cy / YT_TILE;
+	for (int i = 0; i < nr; i++)
+	{
+		int x, y, w, h;
+		yt_rect(i, &x, &y, &w, &h);
+		for (int ty = (y + cy) / YT_TILE; ty <= (y + h - 1 + cy) / YT_TILE; ty++)
+			for (int tx = (x + cx) / YT_TILE; tx <= (x + w - 1 + cx) / YT_TILE; tx++)
+			{
+				const int ox = tx - tx0, oy = ty - ty0;
+				if (ox < 0 || oy < 0 || ox >= OV_W || oy >= OV_H || ov_done[oy * OV_W + ox]) continue;
+				ov_done[oy * OV_W + ox] = 1;
+				for (int l = first; l <= 3; l++)
+				{
+					const int t = level_tile(l, tx, ty);
+					if (t) tile_draw(t, game_ms, tx * 32, ty * 32, cx, cy);
+				}
+			}
+	}
+}
+
+/* R3: the tiler draws one layer (each cell's four merged - tools/stx_pack.py), both SH2s; only
+ * cells that changed are drawn. The far snow and the clouds are drawn over it and get the
+ * level's tiles drawn again over them (they are behind the tiles in SuperTux); Tux, the bad guys
+ * and the rest get the foreground tiles drawn again over them. */
 void game_draw_world(void)
 {
 	uint32_t t0 = plat_prof_us(), t1;
@@ -435,17 +471,18 @@ void game_draw_world(void)
 	level_animate(game_ms);
 	yt_begin(cx, cy);
 	level_mark_animated(cx, cy);
-	tiles_acc += (uint32_t)yt_layers(0, 0);          /* the background picture */
+	tiles_acc += (uint32_t)yt_layers(0, 0);          /* the merged pictures */
 	t1 = plat_prof_us(); tacc[T_TILES] += t1 - t0; t0 = t1;
-	particles_draw(0);                               /* clouds, the far snow */
-	t1 = plat_prof_us(); tacc[T_SPR] += t1 - t0; t0 = t1;
-	tiles_acc += (uint32_t)yt_layers(1, 2);          /* background-tm, interactive-tm */
-	t1 = plat_prof_us(); tacc[T_TILES] += t1 - t0; t0 = t1;
+	if (nparts)
+	{
+		yt_rect_log(1);
+		particles_draw(0);                           /* clouds, the far snow ... */
+		overlay_cells(1, cx, cy);                    /* ... behind the level's tiles */
+	}
+	yt_rect_log(1);
 	objects_draw_back(cx, cy, game_ms);
 	tux_draw(cx, cy, game_ms, global_frame);
-	t1 = plat_prof_us(); tacc[T_SPR] += t1 - t0; t0 = t1;
-	tiles_acc += (uint32_t)yt_layers(3, 3);          /* foreground-tm: over Tux */
-	t1 = plat_prof_us(); tacc[T_TILES] += t1 - t0; t0 = t1;
+	overlay_cells(3, cx, cy);                        /* foreground-tm: over Tux */
 	particles_draw(1);                               /* the near snow */
 	objects_draw_front(cx, cy);                      /* floating scores */
 	t1 = plat_prof_us(); tacc[T_SPR] += t1 - t0;
@@ -465,7 +502,10 @@ static void draw_status(void)
 	q = put_dec(put_str(q, "  COINS "), (uint32_t)ps.distros, 1);
 	q = put_dec(put_str(l2, "LIVES "), (uint32_t)(ps.lives < 0 ? 0 : ps.lives), 1);
 	q = put_str(q, "  ");
-	const char *t = level_title(session_level);
+	static char title[48];             /* NAMES.TXT is searched once a level, not every frame */
+	static int title_of = -1;
+	if (title_of != session_level) { strncpy(title, level_title(session_level), 47); title_of = session_level; }
+	const char *t = title;
 	int n = 0;
 	while (t[n] && n < 28) { q[n] = t[n]; n++; }
 	q[n] = 0;
@@ -495,7 +535,44 @@ static void intro_words(int li, int loading)
 	if (loading) text_mid(F_SMALL, 160, "LOADING ...");
 }
 
-static void bg_loading(void) { bg_picture(); intro_words(session_level, 1); }
+static int load_done, load_total;
+static void bg_loading(void)
+{
+	bg_picture();
+	intro_words(session_level, 1);
+	if (load_total)
+	{
+		/* a bar: the pieces read so far (yt_sprite needs a picture: one 8 x 4 block a step) */
+		static uint8_t full[8 * 4], empty[8 * 4];
+		memset(full, col_yellow, sizeof full);
+		memset(empty, col_black, sizeof empty);
+		for (int i = 0; i < 24; i++)
+			yt_sprite(64 + 8 * i, 171, 8, 4, i * load_total < load_done * 24 ? full : empty);
+	}
+}
+/* level.c's reader calls this after each 32 KB piece */
+static void load_progress(int done, int total)
+{
+	load_done = done;
+	load_total = total;
+	plat_wait_flip();
+	yt_screen();
+	bg_loading();
+	panel_show("", "", "", col_white);
+	present_view();
+}
+static void level_read(int li)
+{
+	if (!level_cached(li))
+	{
+		load_done = load_total = 0;
+		load_progress(0, 0);
+		load_progress(0, 0);       /* both buffers: the words stay while the disc is read */
+		level_progress = load_progress;
+	}
+	load_level(li);
+	level_progress = 0;
+}
 /* levelintro draws the level's background picture alone under the words */
 static void bg_intro(void)
 {
@@ -596,18 +673,7 @@ static void read_input(uint16_t pad)
 int game_play(int li)
 {
 	session_level = li;
-	if (!level_cached(li))
-	{
-		/* the words first, then the disc read (the screen stays as it is meanwhile) */
-		music(0);
-		plat_wait_flip();
-		yt_screen();
-		bg_loading();
-		panel_show("", "", "", col_white);
-		present_view();
-		plat_wait_flip();
-	}
-	load_level(li);
+	level_read(li);                    /* from the cart; from the disc first if it is not there */
 	world_start(-1);
 #ifndef OJ32X_MARS
 	if (getenv("ST_X")) { tux.x = tux.px = (fx)atoi(getenv("ST_X")) << 16; tux.y = tux.py = 0; scrolling(); }   /* PC checks */
@@ -674,18 +740,8 @@ static int demo_walking = 1, demo_timer;
 void demo_start(void)
 {
 	session_level = DEMO_LEVEL;
-	if (!level_cached(DEMO_LEVEL))
-	{
-		music(0);
-		plat_wait_flip();
-		yt_screen();
-		bg_picture();
-		panel_show("", "", "", col_white);
-		present_view();
-		plat_wait_flip();
-	}
 	const PlayerStatus keep = ps;
-	load_level(DEMO_LEVEL);
+	level_read(DEMO_LEVEL);            /* R3: always in the cart (IMAGE8.RAW's DEMO.PAK) */
 	world_start(-1);
 	ps = keep;
 	demo_timer = 0;

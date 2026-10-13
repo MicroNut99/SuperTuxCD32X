@@ -1,5 +1,7 @@
 # R2 - the whole game, half size, sharpened
 
+(R3 changed the drawing, the packs and the loading: docs/R3_NOTES.md.)
+
 Micronut99 asked for "the entire game, don't leave anything out", and chose **"Sharpened"** from
 the four test pictures (half size, half size sharpened, 3/4, full). R2 is SuperTux 0.1.3 from the
 title screen to the end credits. Not yet run on the console.

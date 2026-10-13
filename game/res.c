@@ -186,9 +186,18 @@ const char *level_title(int li) { return name_field(li, 1); }
 const char *level_author(int li) { return name_field(li, 2); }
 
 /* ------------------------------------------------------------------ the panel */
+/* R3: R2's panel cost 8 ms a frame on the console (timing line H) whenever the camera moved -
+ * the 32X's 1-pixel shift (scroll x odd) applies to the panel's lines too, so the panel was
+ * re-made for each buffer at every change of the shift: letters drawn pixel by pixel, then
+ * copied a byte pair at a time. Now the text is drawn only when it changes, into both shifted
+ * versions at once; a buffer that shows an old version gets the right one copied in 32-bit
+ * words (1,920 writes). */
 static uint8_t panel_rows[YT_PANEL_H][YT_VIEW_W + 8];
-static char panel_have[2][3][56];
-static int panel_shift[2] = { -1, -1 };
+static uint32_t panel_px[2][YT_PANEL_H * YT_VIEW_W / 4];   /* shift 0, shift 1 (4-byte aligned) */
+static char panel_have[3][56];
+static uint8_t panel_c1 = 0xFF;
+static int panel_ver;
+static int buf_ver[2] = { -1, -1 }, buf_shift[2] = { -1, -1 };
 
 static void panel_text(int x, int y, const char *t, uint8_t colour)
 {
@@ -196,47 +205,55 @@ static void panel_text(int x, int y, const char *t, uint8_t colour)
 	{
 		const unsigned char *g = msx + (unsigned char)*t * 8;
 		for (int r = 0; r < 8; r++)
+		{
+			const unsigned bits = g[r];
+			if (!bits) continue;
 			for (int b = 0; b < 8; b++)
-				if (g[r] & (0x80 >> b))
+				if (bits & (0x80 >> b))
 				{
 					if (y + r + 1 < YT_PANEL_H && x + b + 1 < YT_VIEW_W) panel_rows[y + r + 1][x + b + 1] = col_black;
 					if (y + r < YT_PANEL_H && x + b < YT_VIEW_W) panel_rows[y + r][x + b] = colour;
 				}
+		}
 	}
 }
 
-/* three lines under the view - drawn only when their text (or the 1-pixel shift) differs from
- * what this frame buffer shows (R1d: drawing them every frame cost 10.3 ms). 16-bit writes
- * (Kobo rule 4), one byte later when the 32X's shift is on (it shifts the panel's lines too). */
+/* three lines under the view (24 lines: three of the 8x8 font, its last row is empty) */
 void panel_show(const char *l1, const char *l2, const char *l3, uint8_t c1)
 {
+	if (c1 != panel_c1 || strncmp(panel_have[0], l1, 55) || strncmp(panel_have[1], l2, 55) || strncmp(panel_have[2], l3, 55))
+	{
+		panel_c1 = c1;
+		strncpy(panel_have[0], l1, 55);
+		strncpy(panel_have[1], l2, 55);
+		strncpy(panel_have[2], l3, 55);
+		memset(panel_rows, col_panel, sizeof panel_rows);
+		panel_text(4, 0, l1, c1);
+		panel_text(4, 8, l2, col_white);
+		panel_text(4, 16, l3, col_white);
+		for (int sh = 0; sh < 2; sh++)
+		{
+			uint8_t *d = (uint8_t *)panel_px[sh];
+			for (int y = 0; y < YT_PANEL_H; y++, d += YT_VIEW_W)
+			{
+				if (sh) { d[0] = col_panel; memcpy(d + 1, panel_rows[y], YT_VIEW_W - 1); }
+				else memcpy(d, panel_rows[y], YT_VIEW_W);
+			}
+		}
+		panel_ver++;
+	}
 	const int shift = yt_scroll_x() & 1;
 	const int b = plat_back_index() & 1;
-	if (panel_shift[b] == shift && !strcmp(panel_have[b][0], l1) && !strcmp(panel_have[b][1], l2)
-	    && !strcmp(panel_have[b][2], l3)) return;
-	panel_shift[b] = shift;
-	strncpy(panel_have[b][0], l1, 55);
-	strncpy(panel_have[b][1], l2, 55);
-	strncpy(panel_have[b][2], l3, 55);
-	memset(panel_rows, col_panel, sizeof panel_rows);
-	panel_text(4, 0, l1, c1);          /* 24 lines: three of the 8x8 font (its last row is empty) */
-	panel_text(4, 8, l2, col_white);
-	panel_text(4, 16, l3, col_white);
-	volatile uint8_t *pb = plat_scroll_panel();
-	for (int y = 0; y < YT_PANEL_H; y++)
-	{
-		const uint8_t *s = panel_rows[y];
-		volatile uint8_t *d = pb + y * YT_VIEW_W;
-		for (int x = 0; x < YT_VIEW_W; x += 2)
-		{
-			const uint8_t a = x - shift >= 0 ? s[x - shift] : col_panel, c = s[x + 1 - shift];
+	if (buf_ver[b] == panel_ver && buf_shift[b] == shift) return;
+	buf_ver[b] = panel_ver;
+	buf_shift[b] = shift;
 #ifdef OJ32X_MARS
-			*(volatile uint16_t *)(d + x) = (uint16_t)(a << 8 | c);
+	volatile uint32_t *d = (volatile uint32_t *)plat_scroll_panel();
+	const uint32_t *s = panel_px[shift];
+	for (int i = 0; i < YT_PANEL_H * YT_VIEW_W / 4; i++) d[i] = s[i];
 #else
-			d[x] = a; d[x + 1] = c;
+	memcpy(plat_scroll_panel(), panel_px[shift], sizeof panel_px[shift]);
 #endif
-		}
-	}
 }
 
 /* ------------------------------------------------------------------ loading */

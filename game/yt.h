@@ -52,9 +52,11 @@
 #define YT_SCROLL_X 64           /* re-anchor every 64 columns (4 tiles) ... */
 #define YT_SCROLL_Y 16           /* ... and every 16 lines (1 tile) */
 
-/* a level for the tiler: four layers of YATSSD tile numbers (resource << 2, 0 = nothing),
- * w x h tiles each; reslist[r] = the 16x16 pixels of resource r */
-void yt_level(const uint16_t *const layers[4], int w, int h, uint8_t **reslist);
+/* a level for the tiler: ONE layer of YATSSD tile numbers (resource << 2, 0 = nothing), w x h
+ * tiles; reslist[r] = the 16x16 pixels of resource r. R3: tools/stx_pack.py merges a level's
+ * four layers into one picture a cell (R1/R2 drew four layers: every cell with a tile over the
+ * background was redrawn every frame); both SH2s draw the cells (yt_layers.c) */
+void yt_level(const uint16_t *layer, int w, int h, uint8_t **reslist);
 
 /* one frame (into the back buffer, after plat_wait_flip):
  *   yt_begin(cx, cy)        the camera (half-size pixels, top-left of the view)
@@ -68,6 +70,12 @@ int  yt_scroll_x(void);
 int  yt_scroll_y(void);
 /* the cell of world tile (tx, ty) redrawn in this buffer (after yt_begin; animated tiles) */
 void yt_mark_tile(int tx, int ty);
+/* the sprites' rectangles (view coordinates, clipped) drawn since yt_rect_log(1) - the game draws
+ * the foreground tiles again over them */
+#define YT_RECTS 96
+void yt_rect_log(int on);
+int  yt_rect_count(void);
+void yt_rect(int i, int *x, int *y, int *w, int *h);
 /* a word of the dirty matrix's tile-map id (forces a full redraw of both buffers) */
 void yt_invalidate(void);
 

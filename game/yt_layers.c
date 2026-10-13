@@ -20,6 +20,7 @@
 #include "yt.h"
 #include "types.h"          /* yatssd/types.h: tilemap_t, dtilelayer_t, drawtilelayerscmd_t */
 
+#include <stdint.h>
 #include <string.h>
 
 /* ---- what YATSSD's own main.c / hw_32x.c define and its files use (yatssd/draw.h) ---- */
@@ -34,30 +35,31 @@ uint32_t canvas_yaw = YT_YAW;          /* places Vic's extrafb at 0x14C00 (yt.h)
 
 int draw_handle_layercmd(drawtilelayerscmd_t *cmd);
 void draw_setScissor(int16_t x, int16_t y, int16_t w, int16_t h);
-int draw_sprite(int x, int y, int w, int h, int stride, const uint8_t *data, int flags);
+int draw_clip(int x, int y, int w, int h, rect_t *cliprect);
+void draw_handle_drawspritecmd(drawsprcmd_t *cmd);
+void plat_parallel(void (*fn)(void *, int), void *arg);   /* port/plat.h */
 
-static dtilelayer_t layer_desc[4];
+static dtilelayer_t layer_desc[1];
 /* YATSSD's global_tilemap_id. Starts at an unlikely value: the first frame compares it with
  * whatever the loader's splash left at 0x14C00 (a match would skip the first full redraw). */
 static uint16_t map_id = 0x5301;
 static int cam_x, cam_y;               /* this frame's camera, clamped */
 static int scroll_x, scroll_y;         /* inside the canvas: 0..63, 0..15 */
 
-void yt_level(const uint16_t *const layers[4], int w, int h, uint8_t **reslist)
+void yt_level(const uint16_t *layer, int w, int h, uint8_t **reslist)
 {
-	/* as init_tilemap() (dtiles.c), without its Genesis plane and line table calls */
+	/* as init_tilemap() (dtiles.c), without its Genesis plane and line table calls. R3: ONE
+	 * layer - tools/stx_pack.py merges a level's four into one picture a cell, so the dirty
+	 * matrix (one tile number a cell) skips every cell that has not changed */
 	memset(&tm, 0, sizeof tm);
 	memset(layer_desc, 0, sizeof layer_desc);
-	for (int i = 0; i < 4; i++)
-	{
-		layer_desc[i].tiles = (uint16_t *)layers[i];
-		layer_desc[i].parallax[0] = layer_desc[i].parallax[1] = 1 << 16;   /* moves with the camera */
-	}
+	layer_desc[0].tiles = (uint16_t *)layer;
+	layer_desc[0].parallax[0] = layer_desc[0].parallax[1] = 1 << 16;   /* moves with the camera */
 	tm.id = map_id++;
 	if (map_id == 0 || map_id == 0xFFFF) map_id = 0x5301;
 	tm.tw = tm.th = YT_TILE;
 	tm.layers = layer_desc;
-	tm.numlayers = 4;
+	tm.numlayers = 1;
 	tm.reslist = reslist;
 	tm.tiles_hor = (unsigned)w;
 	tm.tiles_ver = (unsigned)h;
@@ -105,6 +107,27 @@ void yt_begin(int cx, int cy)
 int yt_scroll_x(void) { return scroll_x; }
 int yt_scroll_y(void) { return scroll_y; }
 
+typedef struct { drawtilelayerscmd_t *cmd; int n[2]; } TilesJob;
+static void tiles_job(void *arg, int which)
+{
+	TilesJob *j = (TilesJob *)arg;
+	const int n = draw_handle_layercmd(j->cmd);
+#ifdef OJ32X_MARS
+	((volatile int *)((uintptr_t)j | 0x20000000u))[1 + (which & 1)] = n;   /* past the caches */
+#else
+	j->n[which & 1] = n;
+#endif
+}
+static int job_count(TilesJob *j)
+{
+#ifdef OJ32X_MARS
+	const volatile int *p = (const volatile int *)((uintptr_t)j | 0x20000000u);
+	return p[1] + p[2];
+#else
+	return j->n[0] + j->n[1];
+#endif
+}
+
 static int yt_layer(int layer)
 {
 	const unsigned w = tm.tw, h = tm.th;
@@ -141,8 +164,17 @@ static int yt_layer(int layer)
 	cmd.camera_y = cam_y;
 	cmd.drawmode = layer == 0 ? 0 : (DRAWSPR_PRECISE | DRAWSPR_OVERWRITE);   /* as draw_tile_layer */
 	cmd.parallax = 0;
+	/* R3: both SH2s, as YATSSD's own draw_tile_layer does it - draw_handle_layercmd hands out
+	 * the cells through Vic's counter in COMM6 (get_next_tile, under his TAS lock), so each
+	 * CPU draws the cells it takes. The second CPU runs the same call through the platform
+	 * layer's plat_parallel (port/plat_mars.c J10: the job in SDRAM, the slave purges its
+	 * cache first), not YATSSD's COMM4 loop. */
+	TilesJob job;
+	job.cmd = &cmd;
+	job.n[0] = job.n[1] = 0;
 	yt_tile_counter_reset();
-	return draw_handle_layercmd(&cmd);
+	plat_parallel(tiles_job, &job);
+	return job_count(&job);
 }
 
 int yt_layers(int first, int last)
@@ -153,17 +185,66 @@ int yt_layers(int first, int last)
 	return n;
 }
 
-/* a sprite at view coordinates. Vic's pixel loops count down an unsigned "units / 4" with
- * do-while: fewer than 4 units after clipping (8 pixels in the 16-bit loops) and the count
- * wraps - about 4 billion writes (found by Sonic32 T7, VIC_YATSSD.md section 6). So a sprite
- * with less than 8 x 2 pixels on the screen is not drawn. */
+/* a sprite at view coordinates: Vic's draw_clip and pixel loops (draw_handle_drawspritecmd,
+ * overwrite mode: colour 0 see-through), as his draw_sprite / draw_clipsprite do it - but the
+ * cells marked for redrawing are exactly the ones under the sprite. (R3: Vic's draw_dirtyrect
+ * shifts y right by 3 and then by 4 again, so it marks every cell from line y / 128 down: a
+ * sprite in the lower half of the view made its whole columns redraw in the next frame.)
+ * Vic's pixel loops count down an unsigned "units / 4" with do-while: fewer than 4 units after
+ * clipping (8 pixels in the 16-bit loops) and the count wraps - about 4 billion writes (found by
+ * Sonic32 T7, VIC_YATSSD.md section 6). So a sprite with less than 8 x 2 pixels on the screen
+ * is not drawn. */
+static int rect_log_on, rect_n;
+static int16_t rect_xy[YT_RECTS][4];
+
+void yt_rect_log(int on) { rect_log_on = on; if (on) rect_n = 0; }
+int yt_rect_count(void) { return rect_n; }
+void yt_rect(int i, int *x, int *y, int *w, int *h)
+{
+	*x = rect_xy[i][0]; *y = rect_xy[i][1]; *w = rect_xy[i][2]; *h = rect_xy[i][3];
+}
+
 int yt_sprite(int vx, int vy, int w, int h, const uint8_t *pixels)
 {
 	const int x0 = vx < 0 ? 0 : vx, x1 = vx + w > YT_VIEW_W ? YT_VIEW_W : vx + w;
 	const int y0 = vy < 0 ? 0 : vy, y1 = vy + h > YT_VIEW_H ? YT_VIEW_H : vy + h;
 	if (x1 - x0 < 8 || y1 - y0 < 2) return 0;
-	/* overwrite mode: the 32X skips 0 bytes (see-through); 16-bit writes (even x) */
-	return draw_sprite(vx, vy, w, h, 0, pixels, DRAWSPR_OVERWRITE);
+	rect_t clip;
+	if (draw_clip(vx, vy, w, h, &clip) == 2) return 0;
+	/* draw_clipsprite, for DRAWSPR_OVERWRITE without flips or scaling */
+	drawsprcmd_t cmd;
+	int x = vx + window_canvas_x + clip.x1, y = vy + window_canvas_y + clip.y1;
+	int cw = w - (clip.x2 + clip.x1), ch = h - (clip.y2 + clip.y1);
+	x &= ~1;
+	cw &= ~1;
+	if (cw < 8 || ch < 2) return 0;
+	cmd.flags = DRAWSPR_OVERWRITE;
+	cmd.x = (uint16_t)x; cmd.y = (uint16_t)y;
+	cmd.w = (uint16_t)cw; cmd.h = (uint16_t)ch;
+	cmd.sx = (int16_t)clip.x1; cmd.sy = (int16_t)clip.y1;
+	cmd.sw = (uint16_t)w; cmd.sh = (uint16_t)h;
+	cmd.sdata = (void *)pixels;
+	cmd.scale = 0;
+	cmd.stride = 0;
+	draw_handle_drawspritecmd(&cmd);
+	/* the cells under it, in this buffer's dirty matrix */
+	if (tm.tw)
+	{
+		int16_t *dirty = yt_extrafb() + 3;
+		const int ctx = (int)tm.canvas_tiles_hor, cty = (int)tm.canvas_tiles_ver;
+		int c0 = x / YT_TILE, c1 = (x + cw - 1) / YT_TILE, r0 = y / YT_TILE, r1 = (y + ch - 1) / YT_TILE;
+		if (c1 >= ctx) c1 = ctx - 1;
+		if (r1 >= cty) r1 = cty - 1;
+		for (int r = r0; r <= r1; r++)
+			for (int c = c0; c <= c1; c++) dirty[r * ctx + c] = -1;
+	}
+	if (rect_log_on && rect_n < YT_RECTS)
+	{
+		rect_xy[rect_n][0] = (int16_t)x0; rect_xy[rect_n][1] = (int16_t)y0;
+		rect_xy[rect_n][2] = (int16_t)(x1 - x0); rect_xy[rect_n][3] = (int16_t)(y1 - y0);
+		rect_n++;
+	}
+	return 1;
 }
 
 void yt_screen(void)

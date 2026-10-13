@@ -1,90 +1,162 @@
 /*
- * SuperTux CD32X - a level: its pack (OJnnn.PAK, tools/stx_pack.py), its layers for Vic's tiler,
- * the tile rules (level.cpp, collision.cpp) and the changes to the map while it is played
- * (coins taken, boxes emptied, bricks broken: level->change). See game/stx.h.
+ * SuperTux CD32X - a level: where it is in the RAM cart (and reading it there from the disc),
+ * its picture layer for Vic's tiler, the tile rules (level.cpp, collision.cpp) and the changes
+ * to the map while it is played (coins taken, boxes emptied, bricks broken: level->change).
+ * See game/stx.h; the data format is in tools/stx_pack.py.
  *
- * Memory: the background layer and SuperTux's background / foreground layers are read straight
- * from the cart (big-endian = the SH2's order); the interactive layer and its rules (SuperTux
- * tile ids) are copied into SDRAM, because they change. The widest level (bonus 2) has 15,630
- * cells: 2 x 31 KB.
- * Animated tiles (coins, water...): each animated tile's YATSSD resource points at its current
- * frame (reslist); the cells in view that show one are marked for redrawing in each buffer when
- * the frame changes (level_mark_animated), since Vic's dirty matrix compares tile numbers only.
+ * R3 - THE CART AS A STORE OF LEVELS. Each level has a fixed place in the cart, its "home"
+ * (HOMES.BIN, tools/stx_pack.py says why): the title's demo level is in IMAGE8.RAW (read at
+ * power-on under the splash), world 1's first levels in area A (kept for good once read), the
+ * others in area B, a ring where reading a level drops only those whose homes it overlaps.
+ * in_cart[] remembers what is there, so a level played before is usually there already: no
+ * disc read, no wait. The reading itself (cart_load: game/yt_mars.c, the boot path's commands
+ * 38 + 46) reads only the level's own 32 KB pieces - not the splash picture that the platform
+ * layer's plat_load_pack reads twice for its loading screen.
+ *
+ * R3 - ONE PICTURE A CELL. The tiler draws one layer: every cell's background, background-tm,
+ * interactive-tm and foreground-tm merged into one picture by tools/stx_pack.py. When a cell's
+ * interactive tile changes, the cell shows the picture made for the new tile (the variants
+ * table); animated pictures (coins, water) change their resource's pixels (reslist) and the
+ * cells in view that show one are marked for redrawing.
+ *
+ * Memory: the picture layer and the rules (SuperTux tile ids of interactive-tm) are copied into
+ * SDRAM because they change (2 x 31 KB for the widest level, bonus 2's 15,630 cells); the rest
+ * is read straight from the cart.
  */
 #include "stx.h"
 
 #define MAX_CELLS 15700
+#define MAX_RES   2560                 /* tools/stx_pack.py MAX_RES */
+#define NLEVELS   77
+#define PIECE     32768u
 int lw, lh, ltrack, ltime, lgrav, lstart_x, lstart_y, lparticles, lback_scroll, lautoscroll, lbkgd_speed;
 int level_n = -1;
-static int level_in_cart = -1;
 fx grav_fx;
 const uint8_t *lobjs;
 int lnobjs;
 const uint8_t *lresets;
 int lnresets;
+void (*level_progress)(int done, int total);
 
 static uint16_t ia_ids[MAX_CELLS];     /* SuperTux tile ids of interactive-tm (the rules) */
-static uint16_t ia_layer[MAX_CELLS];   /* YATSSD layer 2 */
-#ifndef OJ32X_MARS
-static uint16_t host_layers[3][MAX_CELLS];   /* PC: the other layers in the PC's byte order */
-#endif
-static const uint8_t *level_bin;
-static uint8_t *reslist[1024];
-static const uint16_t *layer_ptr[4];
-static uint16_t res_of_tile[512];      /* SuperTux tile id -> YATSSD tile number (resource << 2) */
-static uint8_t res_anim[1024];         /* resources of animated tiles */
+static uint16_t pic_layer[MAX_CELLS];  /* the tiler's layer: YATSSD tile numbers */
+static const uint8_t *level_bin;       /* LEVEL.BIN in the cart */
+static const uint8_t *L_pic, *L_t1, *L_t2, *L_t3, *L_first, *L_anims, *L_frames, *L_vars;
+static int n_res, n_anims, n_vars;
+static const uint8_t *comp_px;         /* COMP.BIN's picture blocks */
+static uint8_t *reslist[MAX_RES + 1];
+static uint8_t res_anim[MAX_RES + 1];  /* resources of animated pictures */
 static uint8_t anim_gen[2];            /* per frame buffer: the animation step it shows */
 static uint32_t anim_step;
 
-static const uint16_t *native_layer(const uint8_t *p, int k)
+/* ------------------------------------------------------------------ the cart */
+typedef struct { uint8_t area; uint16_t first, n, fid; uint32_t flen; } Home;
+static Home homes[NLEVELS];
+static uint8_t in_cart[NLEVELS];
+static int homes_read;
+
+static void read_homes(void)
 {
-#ifdef OJ32X_MARS
-	(void)k;
-	return (const uint16_t *)p;
-#else
-	for (int i = 0; i < lw * lh; i++) host_layers[k][i] = be16(p + 2 * i);
-	return host_layers[k];
-#endif
+	const uint8_t *h = need("HOMES.BIN");
+	for (int i = 0; i < NLEVELS; i++, h += 12)
+	{
+		homes[i].area = h[0];
+		homes[i].first = be16(h + 2); homes[i].n = be16(h + 4); homes[i].fid = be16(h + 6);
+		homes[i].flen = be32(h + 8);
+	}
+	homes_read = 1;
 }
 
+static uint32_t home_at(int li)
+{
+	return (homes[li].area == 1 ? 0x120000u : 0x280000u) + homes[li].first * PIECE;
+}
+
+static const uint8_t *pack_base(int li)
+{
+	if (homes[li].area == 0) return need("DEMO.PAK");
+	return plat_cart_ptr(home_at(li));
+}
+
+/* a file inside one level's pack (OJPK version 2, port/pack.h) */
+static const uint8_t *pk_file(const uint8_t *base, const char *name, uint32_t *size)
+{
+	if (memcmp(base, "OJPK", 4) || be32(base + 4) != 2) return 0;
+	const uint32_t n = be32(base + 8);
+	for (uint32_t i = 0; i < n; i++)
+	{
+		const uint8_t *e = base + 24 + 24 * i;
+		if (!strncmp((const char *)e, name, 16))
+		{
+			if (size) *size = be32(e + 20);
+			return base + be32(e + 16);
+		}
+	}
+	return 0;
+}
+
+int level_cached(int li)
+{
+	if (!homes_read) read_homes();
+	if (li < 0 || li >= NLEVELS) return 0;
+	return homes[li].area == 0 || in_cart[li];
+}
+
+/* the level's pieces from the disc to its home; the levels it overwrites are gone */
+static void fetch(int li)
+{
+	music(0);                          /* no CD data reads while CD audio plays (OpenLara lesson 4) */
+	const Home *h = &homes[li];
+	in_cart[li] = 0;
+	const uint32_t a0 = home_at(li), a1 = a0 + h->n * PIECE;
+	for (int j = 0; j < NLEVELS; j++)
+	{
+		if (j == li || homes[j].area == 0 || !in_cart[j]) continue;
+		const uint32_t b0 = home_at(j), b1 = b0 + homes[j].n * PIECE;
+		if (a0 < b1 && b0 < a1) in_cart[j] = 0;
+	}
+	for (int tries = 0; tries < 3; tries++)
+	{
+		if (cart_load(h->fid, h->flen, h->first, h->n, level_progress)
+		    && pk_file(pack_base(li), "LEVEL.BIN", 0))
+		{
+			in_cart[li] = 1;
+			return;
+		}
+	}
+	static char msg[40];
+	put_str(put_dec(put_str(msg, "LEVEL "), (uint32_t)(li + 1), 3), ": NOT READ FROM THE DISC");
+	plat_fatal(msg);
+}
+
+/* ------------------------------------------------------------------ the level */
 void level_palette(void)
 {
-	const uint8_t *bt = need("BACKT.BIN");
-	for (int i = 0; i < 64; i++) palette[192 + i] = be16(bt + 2 * i);
+	const uint8_t *c = comp_px - 128;
+	for (int i = 0; i < 64; i++) palette[192 + i] = be16(c + 2 * i);
 }
 
 void level_reset_map(void)
 {
 	const int n = lw * lh;
-	const uint8_t *L = level_bin + 32;
 	for (int i = 0; i < n; i++)
 	{
-		ia_layer[i] = be16(L + 2 * n * 2 + 2 * i);
-		ia_ids[i] = be16(L + 2 * n * 4 + 2 * i);
+		pic_layer[i] = be16(L_pic + 2 * i);
+		ia_ids[i] = be16(L_t2 + 2 * i);
 	}
 	yt_invalidate();
 }
 
-int level_cached(int li) { return li == level_in_cart; }
-
 void load_level(int li)
 {
-	if (li != level_in_cart)
-	{
-		level_in_cart = -1;
-		music(0);                      /* no CD data reads while CD audio plays (OpenLara lesson 4) */
-		const int32_t len = plat_load_pack(PACK_LEVEL_ID0 + li + 1, PACK_LEVEL_CART, PACK_LEVEL_MAX);
-		if (len <= 0 || !pack_mount_at(1, plat_cart_ptr(PACK_LEVEL_CART)))
-		{
-			static char msg[40];
-			put_str(put_dec(put_str(msg, "LEVEL PACK OJ"), (uint32_t)(li + 1), 3), ".PAK: NOT LOADED");
-			plat_fatal(msg);
-		}
-		level_in_cart = li;
-	}
+	if (!level_cached(li)) fetch(li);
 	level_n = li;
-	level_bin = need("LEVEL.BIN");
-	if (memcmp(level_bin, "STXR", 4)) plat_fatal("LEVEL.BIN: NOT STXR");
+	const uint8_t *base = pack_base(li);
+	uint32_t csize;
+	level_bin = pk_file(base, "LEVEL.BIN", 0);
+	const uint8_t *comp = pk_file(base, "COMP.BIN", &csize);
+	if (!level_bin || !comp || memcmp(level_bin, "STX3", 4)) plat_fatal("LEVEL.BIN: NOT STX3");
+	comp_px = comp + 128;
 	lw = be16(level_bin + 4); lh = be16(level_bin + 6);
 	ltrack = be16(level_bin + 8); ltime = be16(level_bin + 10); lgrav = be16(level_bin + 12);
 	lstart_x = (int16_t)be16(level_bin + 14); lstart_y = (int16_t)be16(level_bin + 16);
@@ -92,63 +164,54 @@ void load_level(int li)
 	lnobjs = be16(level_bin + 22);
 	lautoscroll = be16(level_bin + 24);
 	lbkgd_speed = be16(level_bin + 26);
+	n_res = be16(level_bin + 28); n_anims = be16(level_bin + 30); n_vars = be16(level_bin + 32);
+	const int n_frames = be16(level_bin + 36);
 	if (lw * lh > MAX_CELLS) plat_fatal("LEVEL TOO BIG");
+	if (n_res > MAX_RES) plat_fatal("LEVEL: TOO MANY TILE PICTURES");
 	grav_fx = (fx)(((uint32_t)lgrav << 16) / 100u);
 	const int cells = lw * lh;
-	const uint8_t *L = level_bin + 32;
-	lobjs = L + 2 * 5 * cells;
+	const uint8_t *p = level_bin + 40;
+	L_pic = p; p += 2 * cells;
+	L_t1 = p; p += 2 * cells;
+	L_t2 = p; p += 2 * cells;
+	L_t3 = p; p += 2 * cells;
+	L_first = p; p += 2 * (n_res + 1);
+	L_anims = p; p += 8 * n_anims;
+	L_frames = p; p += 2 * n_frames;
+	L_vars = p; p += 6 * n_vars;
+	lobjs = p;
 	lnresets = be16(lobjs + 6 * lnobjs);
 	lresets = lobjs + 6 * lnobjs + 2;
 	level_palette();
-	/* the resources (yt.h): 1..nframes tile frames, then the background tiles */
 	reslist[0] = 0;
-	for (int i = 0; i < nframes; i++) reslist[1 + i] = (uint8_t *)(tile_px + YT_TILE * YT_TILE * i);
-	uint32_t btsize;
-	const uint8_t *bt;
-	pack_file("BACKT.BIN", &bt, &btsize);
-	const int nb = (int)((btsize - 128) / (YT_TILE * YT_TILE));
-	if (1 + nframes + nb > 1024) plat_fatal("TOO MANY TILE RESOURCES");
-	for (int i = 0; i < nb; i++) reslist[1 + nframes + i] = (uint8_t *)(bt + 128 + YT_TILE * YT_TILE * i);
-	/* SuperTux tile -> YATSSD number: as tools/stx_pack.py (0 and see-through tiles = nothing) */
-	for (int t = 0; t < ntiles; t++)
-	{
-		res_of_tile[t] = 0;
-		if (t && tdesc[t].frames)
-		{
-			const uint8_t *f = tile_px + YT_TILE * YT_TILE * tdesc[t].first;
-			int any = 0;
-			for (int i = 0; i < YT_TILE * YT_TILE && !any; i++) any = f[i] != 0;
-			if (any) res_of_tile[t] = (uint16_t)((tdesc[t].first + 1) << 2);
-		}
-	}
+	for (int r = 1; r <= n_res; r++) reslist[r] = (uint8_t *)(comp_px + YT_TILE * YT_TILE * be16(L_first + 2 * r));
 	memset(res_anim, 0, sizeof res_anim);
-	for (int t = 1; t < ntiles; t++)
-		if (tdesc[t].frames > 1 && tdesc[t].speed && tdesc[t].first + 1 < 1024) res_anim[tdesc[t].first + 1] = 1;
-	layer_ptr[0] = native_layer(L, 0);
-	layer_ptr[1] = native_layer(L + 2 * cells, 1);
-	layer_ptr[2] = ia_layer;
-	layer_ptr[3] = native_layer(L + 2 * cells * 3, 2);
+	for (int a = 0; a < n_anims; a++)
+	{
+		const int r = be16(L_anims + 8 * a);
+		if (r <= n_res) res_anim[r] = 1;
+	}
 	level_reset_map();
-	yt_level(layer_ptr, lw, lh, reslist);
+	yt_level(pic_layer, lw, lh, reslist);
 	anim_gen[0] = anim_gen[1] = 0xFF;
+	anim_step = 0xFFFFFFFFu;
 }
 
-/* animated tiles (Tile::draw: frame = time / anim speed): their first frame's resource shows the
- * current frame */
+/* animated pictures: their resource shows the frame of the time (Tile::draw: time / speed) */
 void level_animate(uint32_t ms)
 {
-	uint32_t step = ms / 25u;          /* SuperTux's global_frame_counter (25 ms) */
+	const uint32_t step = ms / 25u;    /* SuperTux's global_frame_counter (25 ms) */
 	if (step == anim_step) return;
 	anim_step = step;
 	int changed = 0;
-	for (int t = 1; t < ntiles; t++)
+	for (int a = 0; a < n_anims; a++)
 	{
-		const TileDesc *d = &tdesc[t];
-		if (d->frames > 1 && d->speed)
-		{
-			uint8_t *now = (uint8_t *)(tile_px + YT_TILE * YT_TILE * (d->first + (ms / d->speed) % d->frames));
-			if (reslist[d->first + 1] != now) { reslist[d->first + 1] = now; changed = 1; }
-		}
+		const uint8_t *e = L_anims + 8 * a;
+		const int r = be16(e), nf = be16(e + 2), speed = be16(e + 4), first = be16(e + 6);
+		if (!speed || !nf) continue;
+		const int k = (int)((ms / (uint32_t)speed) % (uint32_t)nf);
+		uint8_t *now = (uint8_t *)(comp_px + YT_TILE * YT_TILE * be16(L_frames + 2 * (first + k)));
+		if (reslist[r] != now) { reslist[r] = now; changed = 1; }
 	}
 	if (changed) anim_gen[0]++, anim_gen[1]++;
 }
@@ -163,13 +226,19 @@ void level_mark_animated(int cx, int cy)
 	for (int ty = ty0; ty <= ty0 + YT_VIEW_H / YT_TILE + 1 && ty < lh; ty++)
 		for (int tx = tx0; tx <= tx0 + YT_VIEW_W / YT_TILE + 1 && tx < lw; tx++)
 		{
-			const int c = ty * lw + tx;
-			for (int l = 1; l <= 3; l++)
-			{
-				const uint16_t v = layer_ptr[l][c];
-				if (v && (v >> 2) < 1024 && res_anim[v >> 2]) { yt_mark_tile(tx, ty); break; }
-			}
+			const uint16_t v = pic_layer[ty * lw + tx];
+			if (res_anim[v >> 2]) yt_mark_tile(tx, ty);
 		}
+}
+
+/* the layers' SuperTux tile ids at a cell (1 background-tm, 2 interactive-tm as it is now,
+ * 3 foreground-tm): the game draws them again over the far snow / clouds and sprites */
+int level_tile(int layer, int tx, int ty)
+{
+	if (tx < 0 || ty < 0 || tx >= lw || ty >= lh) return 0;
+	const int c = ty * lw + tx;
+	if (layer == 2) return ia_ids[c];
+	return be16((layer == 1 ? L_t1 : L_t3) + 2 * c);
 }
 
 int tile_at(int x, int y)
@@ -195,20 +264,42 @@ int box_hits(int bx, int by, int w, int h)
 	return 0;
 }
 
+/* the picture made for cell c with interactive tile t (tools/stx_pack.py variants: sorted by
+ * cell, then tile); -1 if there is none */
+static int variant(int c, int t)
+{
+	int lo = 0, hi = n_vars - 1;
+	while (lo <= hi)
+	{
+		const int mid = (lo + hi) >> 1;
+		const uint8_t *e = L_vars + 6 * mid;
+		const int vc = be16(e), vt = be16(e + 2);
+		if (vc == c && vt == t) return be16(e + 4);
+		if (vc < c || (vc == c && vt < t)) lo = mid + 1;
+		else hi = mid - 1;
+	}
+	return -1;
+}
+
 void level_change(int x, int y, int tile)
 {
 	if (x < 0 || y < 0 || (x >> 5) >= lw || (y >> 5) >= lh) return;
 	const int c = (y >> 5) * lw + (x >> 5);
 	if (tile >= ntiles) tile = 0;
 	ia_ids[c] = (uint16_t)tile;
-	ia_layer[c] = res_of_tile[tile];   /* the tiler sees the number change and redraws the cell */
+	const int v = variant(c, tile);
+	if (v >= 0) pic_layer[c] = (uint16_t)v;   /* the tiler sees the number change and redraws the cell */
+#ifndef OJ32X_MARS
+	else fprintf(stderr, "LEVEL %d: no picture for cell %d with tile %d\n", level_n, c, tile);
+#endif
 }
 
 void level_hide(int tx, int ty, int hide)
 {
 	if (tx < 0 || ty < 0 || tx >= lw || ty >= lh) return;
 	const int c = ty * lw + tx;
-	ia_layer[c] = hide ? 0 : res_of_tile[ia_ids[c] < ntiles ? ia_ids[c] : 0];
+	const int v = variant(c, hide ? 0 : ia_ids[c]);
+	if (v >= 0) pic_layer[c] = (uint16_t)v;
 }
 
 /* ------------------------------------------------------------------ the sweep */

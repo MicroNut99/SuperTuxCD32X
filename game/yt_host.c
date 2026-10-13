@@ -27,7 +27,10 @@ int16_t *yt_extrafb(void)
 	return (int16_t *)(canvas() + YT_PITCH * YT_YAW);
 }
 
-void yt_tile_counter_reset(void) { }
+/* Vic's tile counter (COMM6 on the 32X): yt_layers.c runs draw_handle_layercmd twice through
+ * plat_parallel (game/host.c: one after the other) - each takes the cells the other has not */
+static int tile_counter;
+void yt_tile_counter_reset(void) { tile_counter = 0; }
 
 static void put(int x, int y, int w, int h, const uint8_t *src, int sx, int sy, int stride, int keyed)
 {
@@ -81,12 +84,15 @@ int draw_handle_layercmd(drawtilelayerscmd_t *cmd)
 	const int16_t *layer = (const int16_t *)t->layers[l].tiles;
 	const int16_t *last_layer = (const int16_t *)t->layers[t->numlayers - 1].tiles;
 	int drawcnt = 0, stid = cmd->scroll_tile_id, y = cmd->y;
+	int i = 0, n = tile_counter++;
 	for (int y_tile = cmd->start_tile; y_tile < cmd->end_tile; y_tile += (int)t->tiles_hor)
 	{
 		int id = stid, x = cmd->x;
-		for (int tile = y_tile; tile < y_tile + cmd->num_tiles_x; tile++)
+		for (int tile = y_tile; tile < y_tile + cmd->num_tiles_x; tile++, i++)
 		{
 			const int16_t idx = layer[tile];
+			if (i != n) { id++; x += w; continue; }
+			n = tile_counter++;
 			if (dirty[id] != idx && (idx != 0 || (l == 0 && last_layer[tile] != dirty[id])))
 			{
 				if (l == 0) dirty[id] = idx;
@@ -104,27 +110,24 @@ int draw_handle_layercmd(drawtilelayerscmd_t *cmd)
 	return drawcnt;
 }
 
-/* dsprite.c draw_sprite + draw.c draw_clip, for the flags the game uses (overwrite, no flip,
- * not PRECISE: x and w snapped to even as draw_clipsprite does) */
-int draw_sprite(int x, int y, int w, int h, int stride, const uint8_t *data, int flags)
+/* draw.c draw_clip: the clipped amounts on each side; 2 = nothing left */
+int draw_clip(int x, int y, int w, int h, rect_t *c)
 {
-	if (x + w < scissor.x1 || y + h < scissor.y1 || x >= scissor.x2 || y >= scissor.y2) return 0;
-	int cl = 0, cr = 0, ct = 0, cb = 0;
-	if (w + x > scissor.x2) cr = w + x - scissor.x2;
-	if (x < scissor.x1) cl = scissor.x1 - x;
-	if (h + y > scissor.y2) cb = h + y - scissor.y2;
-	if (y < scissor.y1) ct = scissor.y1 - y;
-	if (w <= cr + cl || h <= cb + ct) return 0;
-	const int sw = w;
-	x += window_canvas_x + cl;
-	y += window_canvas_y + ct;
-	w -= cr + cl;
-	h -= cb + ct;
-	x &= ~1;
-	w &= ~1;
-	put(x, y, w, h, data, cl & ~1, ct, stride ? stride : sw, (flags & DRAWSPR_OVERWRITE) != 0);
-	draw_dirtyrect(&tm, x, y, w, h);
-	return 1;
+	if (x + w < scissor.x1 || y + h < scissor.y1 || x >= scissor.x2 || y >= scissor.y2) return 2;
+	c->x1 = c->x2 = c->y1 = c->y2 = 0;
+	if (w + x > scissor.x2) c->x2 = (int16_t)(w + x - scissor.x2);
+	if (x < scissor.x1) c->x1 = (int16_t)(scissor.x1 - x);
+	if (h + y > scissor.y2) c->y2 = (int16_t)(h + y - scissor.y2);
+	if (y < scissor.y1) c->y1 = (int16_t)(scissor.y1 - y);
+	if (w <= c->x1 + c->x2 || h <= c->y1 + c->y2) return 2;
+	return (c->x1 | c->x2 | c->y1 | c->y2) ? 1 : 0;
+}
+
+/* draw.c draw_handle_drawspritecmd for the flags the game uses (overwrite: 0 see-through) */
+void draw_handle_drawspritecmd(drawsprcmd_t *cmd)
+{
+	put(cmd->x, cmd->y, cmd->w, cmd->h, cmd->sdata, cmd->sx, cmd->sy, cmd->stride ? cmd->stride : cmd->sw,
+	    (cmd->flags & DRAWSPR_OVERWRITE) != 0);
 }
 
 void yt_picture(const uint8_t *pixels)

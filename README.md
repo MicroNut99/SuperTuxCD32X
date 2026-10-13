@@ -12,7 +12,15 @@ game from source code and data that are already available. SuperTux gains nothin
 on the 32X: it will look and play no better than on a PC, and the hardware forces small losses
 (half resolution, 256 colours, keyed edges instead of soft ones, no floating point).
 
-## Status: R2 - the whole game (not yet run on the console)
+## Status: R3 - more frames, levels kept in the cart
+
+R2 ran on the console at 17-22 fps. R3 (`docs/R3_NOTES.md`): each cell's four layers merged into
+one picture (Vic's tiler then draws only what changed), both SH2s drawing the tiles, exact
+sprite marks, a cheap panel, the busy code in SDRAM; the title's level in the cart from
+power-on, world 1's first levels kept once read, the others kept until their room is needed;
+level reads without the splash picture. Not yet run on the console.
+
+## R2 - the whole game
 
 - **All of SuperTux 0.1.3**: the title with its demo level running behind the menu; five save
   slots; Icyisland's world map and its 26 levels; Bonus Island I and II (50 more levels, their
@@ -48,7 +56,7 @@ port.
 
 The first run fetches SuperTux 0.1.3 (`tools/stx_fetch.sh`: tag v0.1.3 of
 github.com/SuperTux/supertux) into `SuperTux-0.1.3/`. Nothing of SuperTux is stored in this
-repository. The disc: `cd32x/subcpu/SuperTuxR2.cue` (+ `.bin`) - ares or real hardware
+repository. The disc: `cd32x/subcpu/SuperTuxR3.cue` (+ `.bin`) - ares or real hardware
 (Fusion cannot emulate the RAM cart). `DATA_ONLY=1 ./build.sh` stops after the data and the PC
 check.
 
@@ -67,12 +75,12 @@ check.
 | `yatssd/` | Victor Luchits' YATSSD files, unchanged (`YATSSD_COMMIT.txt`: the version) |
 | `cd32x/`, `port/` | the Hurrican CD32X port's boot path and platform layer, unchanged |
 | `tools/stx_convert.py` | SuperTux 0.1.3 -> tiles, palette, sprites, backgrounds, levels, previews |
-| `tools/stx_pack.py` | the packs for the disc (resident `IMAGE8.RAW`, `OJnnn.PAK` per level) |
+| `tools/stx_pack.py` | the disc's data: resident `IMAGE8.RAW`, the levels (merged pictures) in `IMAGE9.RAW` / `OJnnn.PAK` at their cart homes |
 | `tools/make_stx_sfx.py`, `make_stx_splash.py`, `splash_bar_colours.py` | sound effects, the splash |
 | `tools/stx_music.sh` | the modules -> CD audio tracks (libxmp-lite, `tools/it2wav.c`) |
 | `tools/check_boot.py` | stops the build if a boot path file differs from Hurrican's |
 | `tools/stx_fetch.sh` | gets SuperTux 0.1.3 |
-| `docs/` | developer notes: `STX_HANDOFF.md`, `R2_NOTES.md`, `R1B_NOTES.md`, `BOOT_PATH_NOTES.md`, `EXAMPLES_NOTES.md` |
+| `docs/` | developer notes: `STX_HANDOFF.md`, `R3_NOTES.md`, `R2_NOTES.md`, `R1B_NOTES.md`, `BOOT_PATH_NOTES.md`, `EXAMPLES_NOTES.md` |
 
 ## Licences and credits
 

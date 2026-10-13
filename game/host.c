@@ -64,6 +64,36 @@ int32_t plat_load_pack(int id, uint32_t off, uint32_t max)
 	return n ? (int32_t)n : -1;
 }
 
+/* game/level.c's reader (on the 32X: game/yt_mars.c, commands 38 + 46 as plat_load_pack sends
+ * them): pieces first .. first + n - 1 of disc file fid (9 = IMAGE9.RAW at cart 0x120000, 200 + k
+ * = OJk.PAK at 0x280000), 32 KB each, to slot + piece x 32 KB */
+int cart_load(int fid, uint32_t flen, int first, int n, void (*progress)(int done, int total))
+{
+	char name[32];
+	uint32_t slot;
+	if (fid >= PACK_LEVEL_ID0) { snprintf(name, sizeof name, "OJ%03d.PAK", fid - PACK_LEVEL_ID0); slot = 0x280000; }
+	else { snprintf(name, sizeof name, "IMAGE%d.RAW", fid); slot = (uint32_t)fid * 0x20000u; }
+	char path[1024];
+	snprintf(path, sizeof path, "%s/%s", env("ST_DIR", "."), name);
+	FILE *f = fopen(path, "rb");
+	if (!f) return 0;
+	fseek(f, 0, SEEK_END);
+	const long len = ftell(f);
+	if ((uint32_t)len != flen) { fclose(f); fprintf(stderr, "HOST: %s is %ld bytes, HOMES.BIN says %u\n", name, len, flen); return 0; }
+	if (getenv("ST_LOG")) fprintf(stderr, "[%u] disc read: %s pieces %d-%d\n", frame, name, first, first + n - 1);
+	for (int c = first; c < first + n; c++)
+	{
+		const uint32_t off = (uint32_t)c * 32768u;
+		if (slot + off + 32768u > 0x3F0000u) { fclose(f); fprintf(stderr, "HOST: a piece past the cart's level area\n"); return 0; }
+		fseek(f, (long)off, SEEK_SET);
+		if (fread(cart + slot + off, 1, 32768, f) == 0) { fclose(f); return 0; }
+		ticks += 300;                  /* about the 32X's time a piece */
+		if (progress) progress(c - first + 1, n);
+	}
+	fclose(f);
+	return 1;
+}
+
 void plat_sfx(int id) { if (getenv("ST_LOG")) fprintf(stderr, "[%u] sfx %d\n", frame, id); }
 void plat_music(int track) { if (getenv("ST_LOG")) fprintf(stderr, "[%u] music %d%s\n", frame, track & 0x7FFF, track & 0x8000 ? " once" : ""); }
 

@@ -141,10 +141,21 @@ The splash, music levels, the menus and extras of the other ports, options from 
   pictures, texts); PALETTE.BIN now holds entry 0 too (R2's first data had every colour one off).
 - Saves: bytes 3072-3439 of the backup RAM file ("STX2").
 
+## R3 - frames and the cart (docs/R3_NOTES.md)
+
+- R2 on the console: F 17-22, T 22-29 ms, N 140-245, H 7-9 ms, L 6.5-9.5 ms.
+- Merged layers (stx_pack.py), one tiler layer; variants for map changes; animated pictures;
+  foreground / back-particle overlays (game.c overlay_cells).
+- yt_sprite: Vic's clip + pixel loop, exact dirty cells (his draw_dirtyrect over-marks).
+- Both SH2s: draw_handle_layercmd through plat_parallel (Vic's COMM6 counter shares the cells).
+- Panel: drawn on change only, both shifts prepared, 32-bit copy.
+- Hot code in SDRAM (mars/Makefile HOT_OBJS).
+- Cart homes: DEMO.PAK in IMAGE8, area A (IMAGE9.RAW), area B ring (padded OJnnn.PAK);
+  cart_load sends commands 38 + 46 itself (no splash re-read).
+
 ## Next
 
-1. R2 on the console: boot, title (the demo's speed), a world map, a level with snow (timing
-   line: F, T, S), a level read (2-7 s), saving and loading a slot.
-2. By what the timing line shows: fewer snowflakes, the background at half speed (on the
-   Genesis planes at the very end, 68000 side, as Hurrican and Tyrian plan), the slave SH2
-   drawing half the tiles.
+1. R3 on the console: the timing line (F, T, N), level reads, overlays, coming back to a level.
+2. If T is still large: the canvas re-anchor every 64 pixels (a full redraw) is the remaining
+   spike; if L: the bad guys' collision loops (all pairs, every 10 ms step).
+3. The background at half speed (bkgd_speed): would need the background separate again.

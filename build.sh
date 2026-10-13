@@ -1,5 +1,5 @@
 #!/bin/bash
-# SuperTux CD32X - builds the R2 disc: the whole of SuperTux 0.1.3 (Icyisland's 26 levels, both
+# SuperTux CD32X - builds the R3 disc: the whole of SuperTux 0.1.3 (Icyisland's 26 levels, both
 # Bonus Islands, the title with its demo, world maps, bad guys, power-ups, saves), half size,
 # sharpened.
 #
@@ -23,7 +23,7 @@ SRC="${SUPERTUX:-$HERE/SuperTux-0.1.3}"
 OUT="$HERE/build"
 ROMS="$HERE/cd32x/subcpu/ROMS"
 MARKER="SH2-OPENLARA-CD-OL1-LOADER"
-DISC=SuperTuxR2
+DISC=SuperTuxR3
 mkdir -p "$OUT" "$ROMS"
 
 echo "==> boot path check (must be Hurrican CD32X's, unchanged)"
@@ -43,8 +43,7 @@ echo "==> splash";      python3 "$HERE/tools/make_stx_splash.py" "$SRC/data" "$O
                         python3 "$HERE/tools/splash_bar_colours.py" "$ROMS/IMAGE.RAW"
 echo "==> data packs";  rm -f "$ROMS"/IMAGE8.RAW "$ROMS"/IMAGE9.RAW "$ROMS"/OJ*.PAK "$ROMS"/SFX*.BIN
                         python3 "$HERE/tools/stx_pack.py" "$OUT/data" "$ROMS"
-SIZE=$(stat -c %s "$ROMS/IMAGE8.RAW")
-[ "$SIZE" -le $((0x180000)) ] || { echo "*** IMAGE8.RAW is $SIZE bytes: more than the 1.5 MB before the level pack area - stopping"; exit 1; }
+# (stx_pack.py itself stops if IMAGE8.RAW would run into the level areas)
 echo "==> sound effects"; python3 "$HERE/tools/make_stx_sfx.py" "$SRC/data" "$ROMS/SFX00.BIN"
 echo "==> music (CD audio tracks 2-13)"
                         "$HERE/tools/stx_music.sh" "$SRC" "$OUT/music"
@@ -69,9 +68,12 @@ grep -a -q "$MARKER" "$ISO" || { echo "*** the disc does NOT contain the loader 
 for f in APP.BIN CDLOADER.BIN OPENLARA.32X IMAGE.RAW IMAGE8.RAW SFX00.BIN; do
   [ -f "$HERE/cd32x/subcpu/cd/$f" ] || { echo "*** $f is not on the disc - stopping"; exit 1; }
 done
-for n in $(seq -f "%03g" 1 77); do        # OJ001-OJ077: the 77 levels (tools/stx_pack.py)
-  [ -f "$HERE/cd32x/subcpu/cd/OJ$n.PAK" ] || { echo "*** OJ$n.PAK is not on the disc - stopping"; exit 1; }
-done
+# every level file tools/stx_pack.py made (IMAGE9.RAW: area A; OJnnn.PAK: area B - PACKS.TXT)
+while read -r f; do
+  [ -z "$f" ] && continue
+  [ -f "$HERE/cd32x/subcpu/cd/$f" ] || { echo "*** $f is not on the disc - stopping"; exit 1; }
+  cmp -s "$HERE/cd32x/subcpu/cd/$f" "$ROMS/$f" || { echo "*** the disc has an old $f - stopping"; exit 1; }
+done < "$ROMS/PACKS.TXT"
 NAME="$(dd if="$HERE/cd32x/subcpu/cd/OPENLARA.32X" bs=1 skip=$((0x3C0)) count=8 2>/dev/null)"
 [ "$NAME" = "OpenJazz" ] || { echo "*** cd/OPENLARA.32X does not carry the J19b module name ($NAME) - stopping"; exit 1; }
 cmp -s "$HERE/cd32x/subcpu/cd/OPENLARA.32X" "$ROMS/OPENLARA.32X" || { echo "*** the disc has an old program - stopping"; exit 1; }

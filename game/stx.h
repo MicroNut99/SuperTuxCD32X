@@ -168,7 +168,7 @@ extern const uint8_t *lobjs;           /* n x {kind u8, stay u8, x s16, y s16} (
 extern int lnobjs;
 extern const uint8_t *lresets;         /* n x {x s16, y s16} */
 extern int lnresets;
-void load_level(int li);               /* disc read only when it is not the one in the cart */
+void load_level(int li);               /* from the cart; from the disc first if it is not there */
 void level_reset_map(void);            /* the map as the level starts (coins back, boxes full) */
 void level_animate(uint32_t ms);       /* animated tiles: their pictures follow the time */
 void level_mark_animated(int cx, int cy);   /* after yt_begin: cells with animated tiles redrawn */
@@ -180,6 +180,11 @@ void level_change(int x, int y, int tile);     /* level->change(x, y, TM_IA, til
 void level_hide(int tx, int ty, int hide);     /* a bouncing brick: its cell empty meanwhile */
 void level_palette(void);              /* palette 192-255 = the level's background */
 int  level_goal_at(int x, int y);
+int  level_tile(int layer, int tx, int ty);    /* 1 background-tm, 2 interactive-tm, 3 foreground-tm */
+extern void (*level_progress)(int done, int total);   /* called after each 32 KB read from the disc */
+/* the platform part (game/yt_mars.c, game/host.c): pieces first .. first + n - 1 of disc file
+ * fid (9 = IMAGE9.RAW, 200 + k = OJk.PAK) into the cart; 0 if it failed */
+int  cart_load(int fid, uint32_t flen, int first, int n, void (*progress)(int done, int total));
 
 /* ------------------------------------------------------------------ physics (physic.cpp) */
 typedef struct { fx vx, vy, ax, ay; int gravity; } Physic;   /* vy: down positive */
