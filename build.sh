@@ -1,5 +1,5 @@
 #!/bin/bash
-# SuperTux CD32X - builds the R1e disc (world 1's 26 levels, Tux walking, running, jumping).
+# SuperTux CD32X - builds the R1f disc (world 1's 26 levels, Tux walking, running, jumping).
 #
 # The steps are Hurrican CD32X's build (= the OpenJazz port's J19b, the last disc proven on the
 # console), with SuperTux's data in place of Hurrican's:
@@ -21,7 +21,7 @@ SRC="${SUPERTUX:-$HERE/SuperTux-0.1.3}"
 OUT="$HERE/build"
 ROMS="$HERE/cd32x/subcpu/ROMS"
 MARKER="SH2-OPENLARA-CD-OL1-LOADER"
-DISC=SuperTuxR1e
+DISC=SuperTuxR1f
 mkdir -p "$OUT" "$ROMS"
 
 echo "==> boot path check (must be Hurrican CD32X's, unchanged)"

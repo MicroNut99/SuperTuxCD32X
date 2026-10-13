@@ -742,6 +742,7 @@ static void draw_tux(int cx, int cy)
 /* ------------------------------------------------------------------ the game's states */
 enum { GS_TITLE, GS_OPTIONS, GS_CONTROLS, GS_SCORES, GS_ENTRY, GS_TEXT, GS_PLAY, GS_OVER };
 static int gs = GS_TITLE, sel, pause_on, pause_sel, gs_t;
+static int from_pause;                 /* OPTIONS was opened from the pause menu: BACK returns to the level */
 static int text_kind;                  /* GS_TEXT: 0 story (then the game), 1 credits, 2 ending */
 static int32_t text_pos;               /* GS_TEXT: the first line's y, 1/16 pixels */
 static int credits_track = 2;
@@ -791,6 +792,31 @@ static void game_end(void)
 		hs_pos = 0;
 	}
 	else { gs = GS_TITLE; sel = 0; music(TRACK_TITLE); }
+}
+
+/* back from OPTIONS (opened in the pause) to the level: still paused. The menus drew over the
+ * canvas and the palette's level part, so both come back; a different LEVEL in the options
+ * starts that level (the pause's level choice). */
+static void back_to_level(void)
+{
+	from_pause = 0;
+	save_store();
+	gs = GS_PLAY;
+	if (opt_level != level_n)
+	{
+		load_level(opt_level);
+		tux_start();
+		gs_t = 0;
+		pause_on = 0;
+	}
+	else
+	{
+		const uint8_t *bt = need("BACKT.BIN");
+		for (int i = 0; i < 64; i++) palette[192 + i] = be16(bt + 2 * i);
+		yt_invalidate();
+		pause_on = 1;
+	}
+	music(ltrack);
 }
 
 static void hs_enter(void)
@@ -914,23 +940,23 @@ int main(int argc, char *argv[])
 				{
 					if (sel == O_LEVEL) opt_level = (opt_level + 26 + d) % 26;
 					if (sel == O_LIVES) opt_lives = (opt_lives + 9 - 1 + d) % 9 + 1;
-					if (sel == O_MUSIC) { opt_music ^= 1; music(opt_music ? TRACK_TITLE : 0); }
+					if (sel == O_MUSIC) { opt_music ^= 1; music(opt_music && !from_pause ? TRACK_TITLE : 0); }
 					if (sel == O_TIMING) opt_timing ^= 1;
 					if (sel == O_BUTTONS) opt_swap ^= 1;
 					changed = 2;
 				}
 				if (hit & ok)
 				{
-					if (sel == O_MUSIC) { opt_music ^= 1; music(opt_music ? TRACK_TITLE : 0); changed = 2; }
+					if (sel == O_MUSIC) { opt_music ^= 1; music(opt_music && !from_pause ? TRACK_TITLE : 0); changed = 2; }
 					else if (sel == O_TIMING) { opt_timing ^= 1; changed = 2; }
 					else if (sel == O_BUTTONS) { opt_swap ^= 1; changed = 2; }
 					else if (sel == O_CONTROLS) gs = GS_CONTROLS;
 					else if (sel == O_STORY) text_start(3);       /* the story alone (3: back to the options) */
 					else if (sel == O_SCORES) { gs = GS_SCORES; hs_new = -1; scores_back = GS_OPTIONS; }
 					else if (sel == O_CREDITS) text_start(1);
-					else if (sel == O_BACK) { gs = GS_TITLE; sel = 1; save_store(); }
+					else if (sel == O_BACK) { if (from_pause) { back_to_level(); continue; } gs = GS_TITLE; sel = 1; save_store(); }
 				}
-				if (hit & PAD_B) { gs = GS_TITLE; sel = 1; save_store(); }
+				if (hit & PAD_B) { if (from_pause) { back_to_level(); continue; } gs = GS_TITLE; sel = 1; save_store(); }
 				(void)changed;
 			}
 			else if (gs == GS_CONTROLS || gs == GS_SCORES)
@@ -973,7 +999,7 @@ int main(int argc, char *argv[])
 				{
 					if (text_kind == 0) { game_start(0); continue; }
 					else if (text_kind == 2) { game_end(); }
-					else { gs = GS_OPTIONS; music(TRACK_TITLE); }
+					else { gs = GS_OPTIONS; music(from_pause ? 0 : TRACK_TITLE); }
 				}
 			}
 			else if (gs == GS_OVER)
@@ -1032,7 +1058,7 @@ int main(int argc, char *argv[])
 				if (first > 0) text_mid(F_SMALL, 20, "^");
 				if (first < 3) text_mid(F_SMALL, 168, "v");
 				h1 = "UP/DOWN CHOOSE  LEFT/RIGHT CHANGE";
-				h2 = "START SELECT    B BACK (SAVES)";
+				h2 = from_pause ? "START SELECT    B BACK TO THE LEVEL" : "START SELECT    B BACK (SAVES)";
 			}
 			else if (gs == GS_CONTROLS)
 			{
@@ -1101,13 +1127,20 @@ int main(int argc, char *argv[])
 		if (hit & PAD_START) { pause_on ^= 1; pause_sel = 0; }
 		else if (pause_on)
 		{
-			enum { P_CONTINUE, P_RESTART, P_MENU, P_TIMING, P_MUSIC, P_N };
+			enum { P_CONTINUE, P_RESTART, P_OPTIONS, P_MENU, P_TIMING, P_MUSIC, P_N };
 			if (hit & PAD_UP) pause_sel = (pause_sel + P_N - 1) % P_N;
 			if (hit & PAD_DOWN) pause_sel = (pause_sel + 1) % P_N;
 			if (hit & (PAD_A | PAD_C | PAD_B | PAD_LEFT | PAD_RIGHT))
 			{
 				if (pause_sel == P_CONTINUE && (hit & (PAD_A | PAD_C | PAD_B))) pause_on = 0;
 				else if (pause_sel == P_RESTART && (hit & (PAD_A | PAD_C | PAD_B))) { pause_on = 0; level_reset_map(); tux_start(); }
+				else if (pause_sel == P_OPTIONS && (hit & (PAD_A | PAD_C | PAD_B)))
+				{
+					/* the options (start level, lives, music, timing, buttons, controls, story,
+					 * high scores, credits) from the pause; BACK returns here */
+					from_pause = 1; opt_level = level_n; gs = GS_OPTIONS; sel = 0; music(0);
+					continue;
+				}
 				else if (pause_sel == P_MENU && (hit & (PAD_A | PAD_C | PAD_B))) { pause_on = 0; gs = GS_TITLE; sel = 0; music(TRACK_TITLE); save_store(); continue; }
 				else if (pause_sel == P_TIMING) opt_timing ^= 1;
 				else if (pause_sel == P_MUSIC) { opt_music ^= 1; music(opt_music ? ltrack : 0); }
@@ -1170,14 +1203,14 @@ int main(int argc, char *argv[])
 		/* words over the level (YATSSD sprites: the tiler redraws under them afterwards) */
 		if (pause_on)
 		{
-			static const char *const pm[] = { "CONTINUE", "RESTART LEVEL", "MAIN MENU", "", "" };
-			text_mid(F_GOLD, 24, "PAUSE");
-			for (int i = 0; i < 5; i++)
+			static const char *const pm[] = { "CONTINUE", "RESTART LEVEL", "OPTIONS", "MAIN MENU", "", "" };
+			text_mid(F_GOLD, 14, "PAUSE");
+			for (int i = 0; i < 6; i++)
 			{
 				const char *w = pm[i];
-				if (i == 3) w = opt_timing ? "TIMING ON" : "TIMING OFF";
-				if (i == 4) w = opt_music ? "MUSIC ON" : "MUSIC OFF";
-				menu_line(F_WHITE, 52 + 20 * i, w, pause_sel == i);
+				if (i == 4) w = opt_timing ? "TIMING ON" : "TIMING OFF";
+				if (i == 5) w = opt_music ? "MUSIC ON" : "MUSIC OFF";
+				menu_line(F_WHITE, 40 + 21 * i, w, pause_sel == i);
 			}
 		}
 		else if (end_steps) text_mid(F_GOLD, 60, "LEVEL CLEAR");

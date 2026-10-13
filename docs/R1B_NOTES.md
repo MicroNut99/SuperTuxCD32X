@@ -38,7 +38,13 @@ port's settings:
 - the panel is drawn only when its text changes (it was 10.3 ms a frame); the timing line is
   off by default (OPTIONS / pause); otherwise the panel's second line is the score.
 Not taken over: Hurrican's demo (attract) mode and its 2ND CPU switch (SuperTux's rules are
-light; nothing runs on the second SH2 yet). Disc: `SuperTuxR1e.cue`.
+light; nothing runs on the second SH2 yet). Disc was `SuperTuxR1e.cue`.
+
+**R1f** - Micronut99: put the options, the level choice, the credits and the extras under the
+pause menu. The pause now has CONTINUE, RESTART LEVEL, **OPTIONS**, MAIN MENU, TIMING, MUSIC;
+OPTIONS opens the same options page as the title's (LEVEL, LIVES, MUSIC, TIMING, BUTTONS,
+CONTROLS, STORY, HIGH SCORES, CREDITS); its BACK (or B) returns to the level, still paused -
+or, when LEVEL was changed, starts that level. Disc: `SuperTuxR1f.cue`.
 
 ## What it does
 
