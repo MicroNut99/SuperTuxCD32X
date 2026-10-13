@@ -130,6 +130,25 @@ void draw_handle_drawspritecmd(drawsprcmd_t *cmd)
 	    (cmd->flags & DRAWSPR_OVERWRITE) != 0);
 }
 
+uint8_t *yt_canvas(void) { return canvas(); }
+
+static void canvas_check(const uint8_t *p, int n, const char *what)
+{
+	if (p < canvas() || p + n > canvas() + YT_PITCH * YT_ROWS)
+	{
+		fprintf(stderr, "YT HOST: %s outside the canvas\n", what);
+		abort();
+	}
+}
+void yt_copy_row(uint8_t *d, const uint8_t *s, int n) { if (n <= 0) return; canvas_check(d, n, "yt_copy_row"); memcpy(d, s, (size_t)n); }
+void yt_move_row(uint8_t *d, const uint8_t *s, int n)
+{
+	if (((d - canvas()) | (s - canvas()) | n) & 3) { fprintf(stderr, "YT HOST: yt_move_row not 4-aligned\n"); abort(); }
+	canvas_check(d, n, "yt_move_row dst");
+	canvas_check(s, n, "yt_move_row src");
+	memmove(d, s, (size_t)n);
+}
+
 void yt_picture(const uint8_t *pixels)
 {
 	for (int y = 0; y < YT_VIEW_H; y++) memcpy(canvas() + y * YT_PITCH, pixels + y * YT_VIEW_W, YT_VIEW_W);

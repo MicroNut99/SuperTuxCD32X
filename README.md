@@ -2,7 +2,7 @@
 
 SuperTux 0.1.3 ("Milestone 1", 2004 – the classic platformer with Tux) on the **Sega CD32X**,
 drawn with Victor Luchits' **YATSSD** tile renderer on the boot, cart and Sub-CPU layers of the
-Hurrican CD32X port. **Version R3.** The whole game runs from one CD: the title with its demo
+Hurrican CD32X port. **Version R4.** The whole game runs from one CD: the title with its demo
 level, Icyisland and both Bonus Islands with their world maps, all 76 levels, every bad guy and
 power-up, CD music, PCM sound effects, saving and high scores. The levels are kept in a 4 MB RAM
 cart once they have been read from the disc.
@@ -42,7 +42,7 @@ libxmp-lite), and so are the sound effects, the pictures and the splash.
 1. The first run fetches SuperTux 0.1.3.
 2. The build converts the data, makes the splash, the sound effects and the CD tracks, checks
    the game on the PC (`host/`), builds the SH2 program, the loader and the Sub-CPU side.
-3. **Burn `cd32x/subcpu/SuperTuxR3.cue`** (with its `.bin`). It has the data track and the 12
+3. **Burn `cd32x/subcpu/SuperTuxR4.cue`** (with its `.bin`). It has the data track and the 12
    music tracks.
 
 `DATA_ONLY=1 ./build.sh` stops after the data and the PC check (no Sega toolchain needed).
@@ -102,7 +102,7 @@ left/right changes a setting. *Options → Jump* swaps A and B (C/B jump, A runs
   stalactite, the flame, the fish, Spiky, the snowball, the bouncing and flying snowballs.
 - Animated tiles, snow and clouds, floating scores, broken bricks.
 - **Pause menu:** Continue, Restart Level, Options, Abort Level, Main Menu.
-- **Options:** music, lives for a new game, the timing line, the jump button, controls, the
+- **Options:** music, lives for a new game, the background (fixed or moving), the timing line, the jump button, controls, the
   story, high scores, credits (with a music player: left/right plays SuperTux's songs).
 - CD music (SuperTux's 12 tracks), 20 sound effects on the Sega CD's PCM chip, high scores and
   saves in the Sega CD's backup RAM.
@@ -111,7 +111,8 @@ left/right changes a setting. *Options → Jump* swaps A and B (C/B jump, A runs
 - **Half size:** SuperTux's 640 × 480 is drawn at 320 × 240 and sharpened; the 32X shows the
   whole width and 352 of the 480 lines (176 pixels), with the camera following Tux up and down.
   The status line is in a panel under the level.
-- The background picture scrolls with the level (SuperTux scrolls some at half speed).
+- The background picture scrolls with the level unless *Options → Background* is set to
+  *Moves* (SuperTux's own half-speed scrolling; it costs frames, so it is off by default).
 - 24 snowflakes instead of SuperTux's 128.
 - No level editor and no Quit in the main menu.
 - Levels cannot be read while music plays (the CD drive can't do both), so the music stops
@@ -135,6 +136,15 @@ the timing line counts real buffer swaps against the refresh counter. A frame no
 | H – the status panel | 7–9 ms | 1–4 ms |
 | W – waiting for the screen refresh | 0.5–6 ms | 6–9 ms |
 
+### R4
+- **The 64-pixel moments:** when the view crosses 64 pixels sideways (or 16 lines up/down) the
+  canvas's pixels are moved by both SH2s with 32-bit copies and only the new strip of cells is
+  drawn, instead of the whole screen. Expect the 38–42 dips to shrink; not yet measured on the
+  console.
+- **Background: Moves** draws the background picture every frame and the level's tiles over it as
+  sprites, like SuperTux. It is slower (expect roughly R2–R3 speeds, more on busy screens) and
+  is off by default. It takes effect from the next level.
+
 ### What was done (R3)
 - **Scrolling costs almost nothing.** Vic's renderer draws into a canvas a little larger than
   the screen; scrolling only changes where the video chip starts reading lines, plus the
@@ -153,8 +163,8 @@ the timing line counts real buffer swaps against the refresh counter. A frame no
 - **The status panel** is drawn only when its text changes.
 - **The busy code runs from the 32X's fast RAM**, not from the cart (the rules, the level,
   Tux, the bad guys, the drawing calls).
-- **What's left:** every 64 pixels sideways the canvas is moved and the screen drawn whole once
-  (the 38–42 fps moments, N 76–103).
+- **What was left (fixed in R4):** every 64 pixels sideways the canvas was re-anchored and the
+  screen drawn whole once (the 38–42 fps moments, N 76–103).
 
 ## Versions
 | Version | What changed |
@@ -163,6 +173,7 @@ the timing line counts real buffer swaps against the refresh counter. A frame no
 | R1c–R1f | The SuperTux splash with a loading bar, louder music, the menus and extras of the other CD32X ports, options in the pause menu. |
 | R2 | The whole game: title with demo, slots, world maps, all levels, every bad guy and power-up, texts, high scores. Half size, sharpened. 17–22 fps. |
 | R3 | 38–56 fps: one merged picture a cell, both SH2s drawing, exact sprite marks, a cheap panel, the busy code in fast RAM. The cart as a store of levels: the title's level from power-on, levels read once. |
+| R4 | The 64-pixel re-anchor moves the canvas's pixels instead of redrawing the screen. *Options → Background: Moves* gives SuperTux's slower-scrolling backgrounds (off by default; their pictures are read into the cart with the level). Small sprites at the screen edge are drawn instead of dropped. |
 
 ## Files
 | Path | Contents |
@@ -180,7 +191,7 @@ the timing line counts real buffer swaps against the refresh counter. A frame no
 | `tools/stx_convert.py`, `stx_pack.py` | SuperTux 0.1.3 → the 32X's data; the disc's files and the cart layout |
 | `tools/make_stx_sfx.py`, `make_stx_splash.py`, `stx_music.sh` | sound effects, the splash, the CD tracks |
 | `tools/check_boot.py`, `check_sdram_code.py`, `where.sh` | build checks; naming the addresses on a red exception screen |
-| `docs/` | developer notes: `STX_HANDOFF.md`, `R3_NOTES.md`, `R2_NOTES.md`, `R1B_NOTES.md`, `BOOT_PATH_NOTES.md` |
+| `docs/` | developer notes: `STX_HANDOFF.md`, `R4_NOTES.md`, `R3_NOTES.md`, `R2_NOTES.md`, `R1B_NOTES.md`, `BOOT_PATH_NOTES.md` |
 
 ## Credits
 - **SuperTux** – Bill Kendrick (original author), Tobias Glaesser (project leader), Ricardo Cruz

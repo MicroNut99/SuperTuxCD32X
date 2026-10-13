@@ -18,6 +18,37 @@ void yt_tile_counter_reset(void)
 	MARS_SYS_COMM6 = 0;        /* draw_tile_layer: "MARS_SYS_COMM6 = 0" before the layer */
 }
 
+uint8_t *yt_canvas(void) { return (uint8_t *)&MARS_FRAMEBUFFER + 0x200; }
+
+/* a row into the canvas (R4: the moving background) - 16- or 32-bit writes when the two
+ * addresses allow it (yt_back makes their parity the same), bytes otherwise */
+void yt_copy_row(uint8_t *d, const uint8_t *s, int n)
+{
+	if (n <= 0) return;
+	if ((((uintptr_t)d ^ (uintptr_t)s) & 1) == 0)
+	{
+		if ((uintptr_t)d & 1) { *d++ = *s++; n--; }
+		if (((((uintptr_t)d ^ (uintptr_t)s) & 3) == 0) && n >= 2 && ((uintptr_t)d & 2))
+		{
+			*(volatile uint16_t *)d = *(const uint16_t *)s; d += 2; s += 2; n -= 2;
+		}
+		if ((((uintptr_t)d ^ (uintptr_t)s) & 3) == 0)
+			for (; n >= 4; n -= 4, d += 4, s += 4) *(volatile uint32_t *)d = *(const uint32_t *)s;
+		for (; n >= 2; n -= 2, d += 2, s += 2) *(volatile uint16_t *)d = *(const uint16_t *)s;
+	}
+	for (; n > 0; n--) *d++ = *s++;
+}
+
+/* inside the canvas (R4: re-anchoring), both 4-aligned: 32-bit words, in the safe direction */
+void yt_move_row(uint8_t *d, const uint8_t *s, int n)
+{
+	volatile uint32_t *dw = (volatile uint32_t *)d;
+	const volatile uint32_t *sw = (const volatile uint32_t *)s;
+	const int w = n >> 2;
+	if (d < s) for (int i = 0; i < w; i++) dw[i] = sw[i];
+	else for (int i = w - 1; i >= 0; i--) dw[i] = sw[i];
+}
+
 void yt_picture(const uint8_t *pixels)
 {
 	/* 320 x 176 into the canvas (byte 0x200, 384 a line), 32-bit writes; pixels 4-byte aligned */

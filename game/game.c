@@ -19,6 +19,7 @@ fx scroll_x;
 int cam_y;
 uint32_t game_ms, global_frame;
 int opt_music = 1, opt_timing = 0, opt_swap = 0, opt_lives = START_LIVES;
+int opt_parallax = 0;                  /* R4: OPTIONS - BACKGROUND MOVES */
 
 void ps_reset(void)
 {
@@ -459,6 +460,25 @@ static void overlay_cells(int first, int cx, int cy)
  * cells that changed are drawn. The far snow and the clouds are drawn over it and get the
  * level's tiles drawn again over them (they are behind the tiles in SuperTux); Tux, the bad guys
  * and the rest get the foreground tiles drawn again over them. */
+/* R4, OPTIONS - BACKGROUND MOVES (SuperTux's bkgd_speed): the background picture, then the
+ * level's tiles one by one as sprites over it - every frame, the whole view (World::draw's own
+ * order). The tiler's dirty matrix is not used, so this costs frames (the reason it is an
+ * option). Tiles of the layers first..last; the foreground (3) after the sprites. */
+static void tiles_over_back(int first, int last, int cx, int cy)
+{
+	const int tx0 = cx / YT_TILE, ty0 = cy / YT_TILE;
+	for (int ty = ty0; ty <= (cy + YT_VIEW_H - 1) / YT_TILE && ty < lh; ty++)
+		for (int tx = tx0; tx <= (cx + YT_VIEW_W - 1) / YT_TILE && tx < lw; tx++)
+			for (int l = first; l <= last; l++)
+			{
+				if (l == 2 && level_hidden(tx, ty)) continue;
+				const int t = level_tile(l, tx, ty);
+				if (t) tile_draw(t, game_ms, tx * 32, ty * 32, cx, cy);
+			}
+}
+
+static int drew_parallax;
+
 void game_draw_world(void)
 {
 	uint32_t t0 = plat_prof_us(), t1;
@@ -469,7 +489,29 @@ void game_draw_world(void)
 	if (cy < 0) cy = 0;
 	view_cx = cx; view_cy = cy;
 	level_animate(game_ms);
+	const int parallax = opt_parallax && back_px && lbkgd_speed != 100;
+	if (parallax != drew_parallax)
+	{
+		yt_invalidate();                 /* the canvas holds the other kind of picture */
+		drew_parallax = parallax;
+	}
 	yt_begin(cx, cy);
+	if (parallax)
+	{
+		yt_back(back_px, back_stride, back_w, back_h, cx * lbkgd_speed / 100, cy);
+		particles_draw(0);               /* clouds, the far snow: behind the tiles */
+		tiles_over_back(1, 2, cx, cy);
+		t1 = plat_prof_us(); tacc[T_TILES] += t1 - t0; t0 = t1;
+		objects_draw_back(cx, cy, game_ms);
+		tux_draw(cx, cy, game_ms, global_frame);
+		t1 = plat_prof_us(); tacc[T_SPR] += t1 - t0; t0 = t1;
+		tiles_over_back(3, 3, cx, cy);   /* foreground-tm: over Tux */
+		t1 = plat_prof_us(); tacc[T_TILES] += t1 - t0; t0 = t1;
+		particles_draw(1);
+		objects_draw_front(cx, cy);
+		t1 = plat_prof_us(); tacc[T_SPR] += t1 - t0;
+		return;
+	}
 	level_mark_animated(cx, cy);
 	tiles_acc += (uint32_t)yt_layers(0, 0);          /* the merged pictures */
 	t1 = plat_prof_us(); tacc[T_TILES] += t1 - t0; t0 = t1;

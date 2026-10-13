@@ -48,7 +48,7 @@ static void save_unpack(const uint8_t *b)
 {
 	memset(slots, 0, sizeof slots);
 	if (memcmp(b, "STX2", 4)) { hs_defaults(); return; }
-	opt_music = b[4] & 1; opt_timing = b[5] & 1; opt_swap = b[6] & 1;
+	opt_music = b[4] & 1; opt_timing = b[5] & 1; opt_parallax = (b[5] >> 1) & 1; opt_swap = b[6] & 1;
 	opt_lives = b[7] >= 1 && b[7] <= 9 ? b[7] : START_LIVES;
 	for (int i = 0; i < HS_N; i++)
 	{
@@ -73,7 +73,7 @@ static void save_pack(uint8_t *b)
 {
 	memset(b, 0, SAVE_BYTES);
 	memcpy(b, "STX2", 4);
-	b[4] = (uint8_t)opt_music; b[5] = (uint8_t)opt_timing; b[6] = (uint8_t)opt_swap; b[7] = (uint8_t)opt_lives;
+	b[4] = (uint8_t)opt_music; b[5] = (uint8_t)(opt_timing | opt_parallax << 1); b[6] = (uint8_t)opt_swap; b[7] = (uint8_t)opt_lives;
 	for (int i = 0; i < HS_N; i++)
 	{
 		uint8_t *r = b + 8 + 8 * i;
@@ -430,7 +430,7 @@ static void bg_controls(void)
 
 void options_page(BgFn bg)
 {
-	enum { O_MUSIC, O_LIVES, O_TIMING, O_BUTTONS, O_CONTROLS, O_STORY, O_SCORES, O_CREDITS, O_BACK, O_N };
+	enum { O_MUSIC, O_LIVES, O_TIMING, O_BUTTONS, O_BACKGROUND, O_CONTROLS, O_STORY, O_SCORES, O_CREDITS, O_BACK, O_N };
 	int sel = 0;
 	static char rows[O_N][32];
 	static const char *items[O_N];
@@ -440,6 +440,8 @@ void options_page(BgFn bg)
 		put_str(put_dec(put_str(rows[O_LIVES], "LIVES  < "), (uint32_t)opt_lives, 1), " >");
 		put_str(rows[O_TIMING], opt_timing ? "TIMING < ON >" : "TIMING < OFF >");
 		put_str(rows[O_BUTTONS], opt_swap ? "JUMP   < C/B >" : "JUMP   < C/A >");
+		/* R4: SuperTux's background moving at its own speed (costs frames: game/game.c) */
+		put_str(rows[O_BACKGROUND], opt_parallax ? "BACKGROUND <MOVES>" : "BACKGROUND <FIXED>");
 		put_str(rows[O_CONTROLS], "CONTROLS");
 		put_str(rows[O_STORY], "STORY");
 		put_str(rows[O_SCORES], "HIGH SCORES");
@@ -453,13 +455,14 @@ void options_page(BgFn bg)
 		m_lr = 0;
 		if (c < 0 || (c == O_BACK && !menu_dir)) break;
 		sel = c;
-		if (menu_dir && c > O_BUTTONS) continue;   /* LEFT / RIGHT only change the settings */
+		if (menu_dir && c > O_BACKGROUND) continue;   /* LEFT / RIGHT only change the settings */
 		switch (c)
 		{
 		case O_MUSIC: opt_music ^= 1; music_again(); break;
 		case O_LIVES: opt_lives = (opt_lives - 1 + d + 9) % 9 + 1; break;
 		case O_TIMING: opt_timing ^= 1; break;
 		case O_BUTTONS: opt_swap ^= 1; break;
+		case O_BACKGROUND: opt_parallax ^= 1; break;   /* from the next level read on */
 		case O_CONTROLS: page_bg = bg; message_screen(bg_controls, "ANY BUTTON: BACK", "", 0, 300, 60000); break;
 		case O_STORY: text_page("INTRO.TXT", PIC_MENU, 0); break;
 		case O_SCORES: hs_new = -1; scores_page(bg); break;
@@ -609,6 +612,7 @@ int main(int argc, char *argv[])
 	/* PC checks: straight into a level (ST_LEVEL) or a world map (ST_MAP); ST_TIMING=1 the
 	 * timing line */
 	if (getenv("ST_TIMING")) opt_timing = 1;
+	if (getenv("ST_PARALLAX")) opt_parallax = 1;
 	if (getenv("ST_LEVEL")) { for (;;) play_alone(atoi(getenv("ST_LEVEL"))); }
 	if (getenv("ST_MAP")) { for (;;) wmap_run(atoi(getenv("ST_MAP")), 0); }
 #endif

@@ -85,7 +85,14 @@ void yt_invalidate(void);
 void yt_screen(void);
 void yt_picture(const uint8_t *pixels);       /* platform part: game/yt_mars.c, game/yt_host.c */
 
+/* R4, OPTIONS - BACKGROUND MOVES: the view filled from a repeating picture (pw x ph, rows of
+ * stride bytes) from its pixel (sx, sy); the level's tiles are then drawn over it as sprites */
+void yt_back(const uint8_t *pic, int stride, int pw, int ph, int sx, int sy);
+
 /* platform parts (game/yt_mars.c on the 32X, game/yt_host.c on the PC) */
+uint8_t *yt_canvas(void);                     /* the canvas: frame buffer byte 0x200, 384 a line */
+void yt_copy_row(uint8_t *dst, const uint8_t *src, int n);    /* into the canvas (same parity) */
+void yt_move_row(uint8_t *dst, const uint8_t *src, int n);    /* inside the canvas, 4-aligned */
 int16_t *yt_extrafb(void);                    /* Vic's extrafb in the back buffer */
 void yt_tile_counter_reset(void);             /* COMM6 = 0 (Vic's tile counter, master only) */
 

@@ -153,10 +153,18 @@ The splash, music levels, the menus and extras of the other ports, options from 
 - Cart homes: DEMO.PAK in IMAGE8, area A (IMAGE9.RAW), area B ring (padded OJnnn.PAK);
   cart_load sends commands 38 + 46 itself (no splash re-read).
 
+## R4 - re-anchor and moving background (docs/R4_NOTES.md)
+
+- reanchor(): the canvas's pixels and the dirty matrix move with the anchor (extrafb words 1-2
+  hold each buffer's top_h / top_v); only the new strip is drawn.
+- Options - Background MOVES (opt_parallax, b[5] bit 1): BACK.BIN packs OJ100-OJ106 (fid 300+n),
+  HOMES.BIN `back`; game.c draws yt_back + layers 1-2 as sprites + layer 3.
+- yt_sprite: clipped sprites under 8x2 drawn byte by byte.
+
 ## Next
 
-1. R3 ran on the console: F 38-56 (R2 17-22), T 3-9 ms, L 2-3 ms, H 1-4 ms, W 6-9 ms (most
-   frames wait for the refresh). Still to film: level reads, the world map, a snowy level.
-2. If T is still large: the canvas re-anchor every 64 pixels (a full redraw) is the remaining
-   spike; if L: the bad guys' collision loops (all pairs, every 10 ms step).
-3. The background at half speed (bkgd_speed): would need the background separate again.
+1. R4 on the console: the timing line on a run to the right (the 64-px dips), and Background
+   MOVES on a few levels (F, the extra read).
+2. If L is large: the bad guys' collision loops (all pairs, every 10 ms step).
+3. MOVES could be faster by merging layers 1-3 into one picture a cell drawn keyed over the
+   background, with a dirty mask for the cells under no tile.

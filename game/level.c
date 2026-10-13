@@ -48,11 +48,14 @@ static uint8_t *reslist[MAX_RES + 1];
 static uint8_t res_anim[MAX_RES + 1];  /* resources of animated pictures */
 static uint8_t anim_gen[2];            /* per frame buffer: the animation step it shows */
 static uint32_t anim_step;
+/* bouncing bricks (at most 4 at once, objects.c MAX_BOB): their cells, for the moving-background
+ * drawing, which draws the tiles one by one */
+static int hidden_cells[8], n_hidden;
 
 /* ------------------------------------------------------------------ the cart */
 /* homes[0..76]: the levels; homes[77 + n]: background picture n (R4, the moving background) */
 #define MAX_HOMES 96
-typedef struct { uint8_t area; uint16_t first, n, fid; uint32_t flen; } Home;
+typedef struct { uint8_t area, back; uint16_t first, n, fid; uint32_t flen; } Home;
 static Home homes[MAX_HOMES];
 static uint8_t in_cart[MAX_HOMES];
 static int homes_read, n_homes;
@@ -67,6 +70,7 @@ static void read_homes(void)
 	for (int i = 0; i < n_homes; i++, h += 12)
 	{
 		homes[i].area = h[0];
+		homes[i].back = h[1];          /* a level's moving background picture + 1 (0: none) */
 		homes[i].first = be16(h + 2); homes[i].n = be16(h + 4); homes[i].fid = be16(h + 6);
 		homes[i].flen = be32(h + 8);
 	}
@@ -80,13 +84,7 @@ static uint32_t home_at(int li)
 
 static const uint8_t *pack_base(int li)
 {
-	if (homes[li].area == 0)
-	{
-		if (li < NLEVELS) return need("DEMO.PAK");
-		static char name[16];
-		put_str(put_dec(put_str(name, "BACK"), (uint32_t)(li - NLEVELS), 1), ".PAK");
-		return need(name);
-	}
+	if (homes[li].area == 0) return need("DEMO.PAK");
 	return plat_cart_ptr(home_at(li));
 }
 
@@ -114,38 +112,55 @@ static int home_cached(int i)
 	return homes[i].area == 0 || in_cart[i];
 }
 
-/* the level and the background picture it moves (R4) are both in the cart */
+static int homes_overlap(int i, int j)
+{
+	if (homes[i].area == 0 || homes[j].area == 0) return 0;
+	const uint32_t a0 = home_at(i), a1 = a0 + homes[i].n * PIECE;
+	const uint32_t b0 = home_at(j), b1 = b0 + homes[j].n * PIECE;
+	return a0 < b1 && b0 < a1;
+}
+
+/* R4: the background picture level li moves at its own speed (OPTIONS - BACKGROUND MOVES), as
+ * a home index, or -1: the option is off, the level has none (a gradient, or a picture that
+ * moves with the level), or the picture's home in the ring overlaps the level's own (then both
+ * cannot be in the cart at once: the level is drawn as with the option off) */
+static int back_home(int li)
+{
+	if (!homes_read) read_homes();
+	if (!opt_parallax || li < 0 || li >= NLEVELS || !homes[li].back) return -1;
+	const int b = NLEVELS + homes[li].back - 1;
+	if (b >= n_homes || homes_overlap(li, b)) return -1;
+	return b;
+}
+
+/* the level (and the background picture it moves) are in the cart: no disc read */
 int level_cached(int li)
 {
 	if (!home_cached(li)) return 0;
-	const int bg = level_back_index(li);
+	const int bg = back_home(li);
 	return bg < 0 || home_cached(bg);
 }
 
-/* the level's pieces from the disc to its home; the levels it overwrites are gone */
+/* a level's or a picture's pieces from the disc to its home; what it overwrites is gone */
 static void fetch(int li)
 {
 	music(0);                          /* no CD data reads while CD audio plays (OpenLara lesson 4) */
 	const Home *h = &homes[li];
 	in_cart[li] = 0;
-	const uint32_t a0 = home_at(li), a1 = a0 + h->n * PIECE;
-	for (int j = 0; j < NLEVELS; j++)
-	{
-		if (j == li || homes[j].area == 0 || !in_cart[j]) continue;
-		const uint32_t b0 = home_at(j), b1 = b0 + homes[j].n * PIECE;
-		if (a0 < b1 && b0 < a1) in_cart[j] = 0;
-	}
+	for (int j = 0; j < n_homes; j++)
+		if (j != li && in_cart[j] && homes_overlap(li, j)) in_cart[j] = 0;
 	for (int tries = 0; tries < 3; tries++)
 	{
 		if (cart_load(h->fid, h->flen, h->first, h->n, level_progress)
-		    && pk_file(pack_base(li), "LEVEL.BIN", 0))
+		    && pk_file(pack_base(li), li < NLEVELS ? "LEVEL.BIN" : "BACK.BIN", 0))
 		{
 			in_cart[li] = 1;
 			return;
 		}
 	}
 	static char msg[40];
-	put_str(put_dec(put_str(msg, "LEVEL "), (uint32_t)(li + 1), 3), ": NOT READ FROM THE DISC");
+	put_str(put_dec(put_str(msg, li < NLEVELS ? "LEVEL " : "BACKGROUND "), (uint32_t)(li < NLEVELS ? li + 1 : li - NLEVELS), 3),
+	        ": NOT READ FROM THE DISC");
 	plat_fatal(msg);
 }
 
@@ -159,6 +174,7 @@ void level_palette(void)
 void level_reset_map(void)
 {
 	const int n = lw * lh;
+	n_hidden = 0;
 	for (int i = 0; i < n; i++)
 	{
 		pic_layer[i] = be16(L_pic + 2 * i);
@@ -167,9 +183,25 @@ void level_reset_map(void)
 	yt_invalidate();
 }
 
+/* the moving background (R4): its picture in the cart, 0 when the level does not move one */
+const uint8_t *back_px;
+int back_w, back_h, back_stride;
+
 void load_level(int li)
 {
-	if (!level_cached(li)) fetch(li);
+	if (!home_cached(li)) fetch(li);
+	const int bg = back_home(li);
+	if (bg >= 0 && !home_cached(bg)) fetch(bg);     /* never overlaps the level (back_home) */
+	back_px = 0;
+	if (bg >= 0)
+	{
+		const uint8_t *b = pk_file(pack_base(bg), "BACK.BIN", 0);
+		if (b)
+		{
+			back_w = be16(b); back_h = be16(b + 2); back_stride = be16(b + 4);
+			back_px = b + 8;
+		}
+	}
 	level_n = li;
 	const uint8_t *base = pack_base(li);
 	uint32_t csize;
@@ -314,10 +346,21 @@ void level_change(int x, int y, int tile)
 #endif
 }
 
+int level_hidden(int tx, int ty)
+{
+	const int c = ty * lw + tx;
+	for (int i = 0; i < n_hidden; i++) if (hidden_cells[i] == c) return 1;
+	return 0;
+}
+
 void level_hide(int tx, int ty, int hide)
 {
 	if (tx < 0 || ty < 0 || tx >= lw || ty >= lh) return;
 	const int c = ty * lw + tx;
+	if (hide && n_hidden < 8) hidden_cells[n_hidden++] = c;
+	if (!hide)
+		for (int i = 0; i < n_hidden; i++)
+			if (hidden_cells[i] == c) { hidden_cells[i] = hidden_cells[--n_hidden]; break; }
 	const int v = variant(c, hide ? 0 : ia_ids[c]);
 	if (v >= 0) pic_layer[c] = (uint16_t)v;
 }

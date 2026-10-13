@@ -79,6 +79,82 @@ void yt_invalidate(void)
 	if (map_id == 0 || map_id == 0xFFFF) map_id = 0x5301;
 }
 
+/* ------------------------------------------------------------------ R4: re-anchoring
+ * The canvas is the view plus 64 columns and 16 lines; when the camera crosses a multiple of 64
+ * sideways (or 16 up / down), Vic's draw_tile_layer starts numbering the canvas cells from
+ * another world tile - every cell then holds the "wrong" tile and the whole screen was drawn
+ * again (R3 on the console: N 76-103, the dips to 38-42 fps). Now the canvas's pixels and the
+ * dirty matrix are moved along by the same number of cells instead (32-bit copies, both SH2s
+ * when only the columns move): only the cells that come in new are drawn. A move of more than
+ * two steps (a jump of the camera) still redraws everything. */
+#define CANVAS_W (YT_PITCH)
+#define CANVAS_H (YT_ROWS / YT_TILE * YT_TILE)   /* 192: the canvas cells' lines */
+typedef struct { int dx, dy, y0, y1; } MoveJob;
+
+static void move_lines(void *arg, int which)
+{
+	const MoveJob *m = (const MoveJob *)arg;
+	const int half = (m->y0 + m->y1) / 2;
+	const int a = which ? half : m->y0, b = which ? m->y1 : half;
+	uint8_t *canvas = yt_canvas();
+	/* destination line y takes source line y + dy; inside it, x takes x + dx */
+	const int x0 = m->dx < 0 ? -m->dx : 0, x1 = m->dx > 0 ? CANVAS_W - m->dx : CANVAS_W;
+	const int up = m->dy >= 0;
+	for (int k = a; k < b; k++)
+	{
+		const int y = up ? k : (m->y0 + m->y1 - 1 - k);
+		const int sy = y + m->dy;
+		if (sy < 0 || sy >= CANVAS_H) continue;
+		yt_move_row(canvas + y * CANVAS_W + x0, canvas + sy * CANVAS_W + x0 + m->dx, x1 - x0);
+	}
+}
+
+static void reanchor(int dc, int dr)
+{
+	const int ctx = (int)tm.canvas_tiles_hor, cty = (int)tm.canvas_tiles_ver;
+	int16_t *dirty = yt_extrafb() + 3;
+	if (dc < -2 * (int)tm.scroll_tiles_hor || dc > 2 * (int)tm.scroll_tiles_hor || dr < -2 || dr > 2
+	    || dc >= ctx || -dc >= ctx || dr >= cty || -dr >= cty)
+	{
+		for (int i = 0; i < ctx * cty; i++) dirty[i] = -1;
+		return;
+	}
+	MoveJob m = { dc * YT_TILE, dr * YT_TILE, 0, CANVAS_H };
+	if (dr == 0) plat_parallel(move_lines, &m);   /* the lines are independent: both SH2s */
+	else { move_lines(&m, 0); move_lines(&m, 1); }
+	/* the dirty matrix the same way: cell (c, r) takes (c + dc, r + dr); new cells: -1 */
+	int16_t old[24 * 13];
+	const int n = ctx * cty < (int)(sizeof old / sizeof old[0]) ? ctx * cty : (int)(sizeof old / sizeof old[0]);
+	for (int i = 0; i < n; i++) old[i] = dirty[i];
+	for (int r = 0; r < cty; r++)
+		for (int c = 0; c < ctx; c++)
+		{
+			const int sc = c + dc, sr = r + dr;
+			dirty[r * ctx + c] = (sc >= 0 && sc < ctx && sr >= 0 && sr < cty && sr * ctx + sc < n) ? old[sr * ctx + sc] : -1;
+		}
+}
+
+/* ------------------------------------------------------------------ R4: the moving background
+ * OPTIONS - BACKGROUND MOVES: the view filled from a picture (rows of `stride` bytes, pw x ph,
+ * repeating) starting at picture pixel (sx, sy). One pixel of the start may move by one so the
+ * copy can use 16-bit (or 32-bit) writes: the picture is far away, it does not show. */
+void yt_back(const uint8_t *pic, int stride, int pw, int ph, int sx, int sy)
+{
+	uint8_t *canvas = yt_canvas();
+	sx %= pw; if (sx < 0) sx += pw;
+	sy %= ph; if (sy < 0) sy += ph;
+	if ((sx ^ window_canvas_x) & 1) sx = (sx + 1) % pw;
+	for (int y = 0; y < YT_VIEW_H; y++)
+	{
+		const uint8_t *row = pic + ((sy + y) % ph) * stride;
+		uint8_t *d = canvas + (window_canvas_y + y) * CANVAS_W + window_canvas_x;
+		int n1 = pw - sx;
+		if (n1 > YT_VIEW_W) n1 = YT_VIEW_W;
+		yt_copy_row(d, row + sx, n1);
+		if (n1 < YT_VIEW_W) yt_copy_row(d + n1, row, YT_VIEW_W - n1);
+	}
+}
+
 void yt_begin(int cx, int cy)
 {
 	const int maxx = (int)(tm.tiles_hor * tm.tw) - YT_VIEW_W;
@@ -96,12 +172,20 @@ void yt_begin(int cx, int cy)
 
 	/* draw_tile_layer, layer 0: a new tile map in this buffer -> every cell dirty */
 	int16_t *extrafb = yt_extrafb();
+	const int top_h = (int)tm.scroll_tiles_hor * (cam_x / (int)tm.scroll_interval_hor);
+	const int top_v = (int)tm.scroll_tiles_ver * (cam_y / (int)tm.scroll_interval_ver);
 	if (extrafb[0] != (int16_t)tm.id)
 	{
 		int16_t *p = extrafb + 3;
 		for (unsigned i = 0; i < tm.canvas_tiles_hor * tm.canvas_tiles_ver; i++) p[i] = -1;
 		extrafb[0] = (int16_t)tm.id;
 	}
+	else if (extrafb[1] != top_h || extrafb[2] != top_v)
+		reanchor(top_h - extrafb[1], top_v - extrafb[2]);
+	/* this buffer's canvas now holds world tile (top_h + c, top_v + r) in cell (c, r) - kept in
+	 * Vic's extrafb words 1 and 2, which nothing else uses here */
+	extrafb[1] = (int16_t)top_h;
+	extrafb[2] = (int16_t)top_v;
 }
 
 int yt_scroll_x(void) { return scroll_x; }
@@ -194,6 +278,18 @@ int yt_layers(int first, int last)
  * clipping (8 pixels in the 16-bit loops) and the count wraps - about 4 billion writes (found by
  * Sonic32 T7, VIC_YATSSD.md section 6). So a sprite with less than 8 x 2 pixels on the screen
  * is not drawn. */
+static void mark_cells(int x, int y, int w, int h)
+{
+	if (!tm.tw) return;
+	int16_t *dirty = yt_extrafb() + 3;
+	const int ctx = (int)tm.canvas_tiles_hor, cty = (int)tm.canvas_tiles_ver;
+	int c0 = x / YT_TILE, c1 = (x + w - 1) / YT_TILE, r0 = y / YT_TILE, r1 = (y + h - 1) / YT_TILE;
+	if (c1 >= ctx) c1 = ctx - 1;
+	if (r1 >= cty) r1 = cty - 1;
+	for (int r = r0; r <= r1; r++)
+		for (int c = c0; c <= c1; c++) dirty[r * ctx + c] = -1;
+}
+
 static int rect_log_on, rect_n;
 static int16_t rect_xy[YT_RECTS][4];
 
@@ -208,7 +304,21 @@ int yt_sprite(int vx, int vy, int w, int h, const uint8_t *pixels)
 {
 	const int x0 = vx < 0 ? 0 : vx, x1 = vx + w > YT_VIEW_W ? YT_VIEW_W : vx + w;
 	const int y0 = vy < 0 ? 0 : vy, y1 = vy + h > YT_VIEW_H ? YT_VIEW_H : vy + h;
-	if (x1 - x0 < 8 || y1 - y0 < 2) return 0;
+	if (x1 <= x0 || y1 <= y0) return 0;
+	if (x1 - x0 < 8 || y1 - y0 < 2)
+	{
+		/* R4: too small for Vic's loops - copied here a byte at a time (0 see-through), so a tile
+		 * or a sprite at the edge of the view is not missing its last few pixels */
+		uint8_t *canvas = yt_canvas();
+		for (int y = y0; y < y1; y++)
+		{
+			const uint8_t *s = pixels + (y - vy) * w + (x0 - vx);
+			uint8_t *d = canvas + (window_canvas_y + y) * CANVAS_W + window_canvas_x + x0;
+			for (int x = 0; x < x1 - x0; x++) if (s[x]) d[x] = s[x];
+		}
+		mark_cells(window_canvas_x + x0, window_canvas_y + y0, x1 - x0, y1 - y0);
+		return 1;
+	}
 	rect_t clip;
 	if (draw_clip(vx, vy, w, h, &clip) == 2) return 0;
 	/* draw_clipsprite, for DRAWSPR_OVERWRITE without flips or scaling */
@@ -227,17 +337,7 @@ int yt_sprite(int vx, int vy, int w, int h, const uint8_t *pixels)
 	cmd.scale = 0;
 	cmd.stride = 0;
 	draw_handle_drawspritecmd(&cmd);
-	/* the cells under it, in this buffer's dirty matrix */
-	if (tm.tw)
-	{
-		int16_t *dirty = yt_extrafb() + 3;
-		const int ctx = (int)tm.canvas_tiles_hor, cty = (int)tm.canvas_tiles_ver;
-		int c0 = x / YT_TILE, c1 = (x + cw - 1) / YT_TILE, r0 = y / YT_TILE, r1 = (y + ch - 1) / YT_TILE;
-		if (c1 >= ctx) c1 = ctx - 1;
-		if (r1 >= cty) r1 = cty - 1;
-		for (int r = r0; r <= r1; r++)
-			for (int c = c0; c <= c1; c++) dirty[r * ctx + c] = -1;
-	}
+	mark_cells(x, y, cw, ch);           /* the cells under it, in this buffer's dirty matrix */
 	if (rect_log_on && rect_n < YT_RECTS)
 	{
 		rect_xy[rect_n][0] = (int16_t)x0; rect_xy[rect_n][1] = (int16_t)y0;

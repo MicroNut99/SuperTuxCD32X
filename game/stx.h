@@ -180,7 +180,12 @@ void level_change(int x, int y, int tile);     /* level->change(x, y, TM_IA, til
 void level_hide(int tx, int ty, int hide);     /* a bouncing brick: its cell empty meanwhile */
 void level_palette(void);              /* palette 192-255 = the level's background */
 int  level_goal_at(int x, int y);
-int  level_tile(int layer, int tx, int ty);    /* 1 background-tm, 2 interactive-tm, 3 foreground-tm */
+int  level_tile(int layer, int tx, int ty);
+int  level_hidden(int tx, int ty);              /* a bouncing brick's cell: drawn empty meanwhile */
+/* R4, OPTIONS - BACKGROUND MOVES: the level's background picture (palette 192-255), rows of
+ * back_stride bytes; 0 when this level is drawn with the background fixed to it */
+extern const uint8_t *back_px;
+extern int back_w, back_h, back_stride;    /* 1 background-tm, 2 interactive-tm, 3 foreground-tm */
 extern void (*level_progress)(int done, int total);   /* called after each 32 KB read from the disc */
 /* the platform part (game/yt_mars.c, game/host.c): pieces first .. first + n - 1 of disc file
  * fid (9 = IMAGE9.RAW, 200 + k = OJk.PAK) into the cart; 0 if it failed */
@@ -242,7 +247,7 @@ void ps_reset(void);                   /* PlayerStatus::reset (lives: OPTIONS - 
 extern fx scroll_x;                    /* the camera, units (World::scrolling) */
 extern int cam_y;                      /* units (ours: the 32X shows 352 of SuperTux's 480 lines) */
 extern uint32_t game_ms, global_frame;
-extern int opt_music, opt_timing, opt_swap, opt_lives;
+extern int opt_music, opt_timing, opt_swap, opt_lives, opt_parallax;
 void trybreakbrick(int x, int y, int small, int dir);
 void tryemptybox(int x, int y, int dir);
 void trygrabdistro(int x, int y, int bounce);
