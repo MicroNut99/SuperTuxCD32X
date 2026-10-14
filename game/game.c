@@ -23,6 +23,7 @@ fx scroll_x;
 int cam_y;
 uint32_t game_ms, global_frame;
 int opt_music = 1, opt_timing = 0, opt_swap = 0, opt_lives = START_LIVES;
+int opt_smooth = 1;                    /* R9: OPTIONS - MOTION (R6's drawing between steps) */
 int opt_parallax = 0;                  /* R4: OPTIONS - BACKGROUND MOVES */
 
 void ps_reset(void)
@@ -53,11 +54,24 @@ void music_again(void)
 }
 
 static uint16_t pad_raw;               /* the pad as the console sent it (R8) */
+static uint32_t pad_stale;             /* R9: pad replies that came back old (see pad_read) */
 static uint16_t pad_prev = 0xFFFF;     /* nothing counts as pressed until it is let go once */
 uint16_t pad_read(uint16_t *hit)
 {
 	uint16_t p = plat_read_pad();
 	pad_raw = p;                       /* R8: shown with the timing line (draw_status) */
+	{
+		/* R9: each pad reply brings the 68000's frame counter (port/plat_mars.c CMD 48, COMM10).
+		 * When a refresh or more has passed since the last request and the counter has not
+		 * moved, the console handed back an old pad: counted, and shown with the timing line */
+		static uint16_t last_tick;
+		static uint32_t last_ms;
+		const uint32_t now = plat_ticks_ms();
+		const uint16_t tick = yt_pad_tick();
+		if (now - last_ms >= 16 && tick == last_tick) pad_stale++;
+		last_tick = tick;
+		last_ms = now;
+	}
 	if (opt_swap)
 		p = (uint16_t)((p & ~(PAD_A | PAD_B)) | ((p & PAD_A) ? PAD_B : 0) | ((p & PAD_B) ? PAD_A : 0));
 	if (hit) *hit = p & ~pad_prev;
@@ -397,7 +411,7 @@ static void interp_save(void)
 	ip_tux_x = tux.x; ip_tux_y = tux.y;
 	for (int i = 0; i < nparts; i++) { ip_part[i][0] = parts[i].x; ip_part[i][1] = parts[i].y; }
 	objects_interp_save();
-	interp_on = 1;
+	interp_on = opt_smooth;            /* R9: OPTIONS - MOTION STEPS draws as R5 did */
 }
 
 static void world_action(void)
@@ -768,7 +782,7 @@ static void draw_status(void)
 	if (title_of != session_level) { strncpy(title, level_title(session_level), 47); title_of = session_level; }
 	const char *t = title;
 	int n = 0;
-	const int maxn = opt_timing ? 22 : 28;
+	const int maxn = opt_timing ? 18 : 28;
 	while (t[n] && n < maxn) { q[n] = t[n]; n++; }
 	q[n] = 0;
 	if (opt_timing)
@@ -779,6 +793,7 @@ static void draw_status(void)
 		*e++ = ' '; *e++ = 'P';
 		for (int k = 12; k >= 0; k -= 4) *e++ = hx[(pad_raw >> k) & 15];
 		*e = 0;
+		e = put_dec(put_str(e, " S"), pad_stale % 1000u, 1);   /* R9: old pad replies */
 	}
 	if (opt_timing) timing_line(l3);
 	else put_str(l3, "");

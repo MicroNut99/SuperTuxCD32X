@@ -230,7 +230,7 @@ static void wmap_draw(void)
 {
 	int x, y;
 	tux_pos(&x, &y);
-	if (ip_ok)
+	if (ip_ok && opt_smooth)
 	{
 		const int on = interp_on;
 		interp_on = 1;

@@ -20,6 +20,10 @@ void yt_tile_counter_reset(void)
 
 uint8_t *yt_canvas(void) { return (uint8_t *)&MARS_FRAMEBUFFER + 0x200; }
 
+/* R9: the low 16 bits of the 68000's frame counter that the Sub-CPU puts in COMM10 with each pad
+ * reply (cd32x/subcpu/main.c K32) - the game compares it to see a reply that came back old */
+uint16_t yt_pad_tick(void) { return MARS_SYS_COMM10; }
+
 /* a row into the canvas (R4: the moving background) - 16- or 32-bit writes when the two
  * addresses allow it (yt_back makes their parity the same), bytes otherwise */
 void yt_copy_row(uint8_t *d, const uint8_t *s, int n)

@@ -153,3 +153,6 @@ void yt_picture(const uint8_t *pixels)
 {
 	for (int y = 0; y < YT_VIEW_H; y++) memcpy(canvas() + y * YT_PITCH, pixels + y * YT_VIEW_W, YT_VIEW_W);
 }
+
+/* R9: the 68000's counter of a pad reply (game/yt_mars.c): on the PC every reply is fresh */
+uint16_t yt_pad_tick(void) { return (uint16_t)(plat_ticks_ms() * 60u / 1000u); }

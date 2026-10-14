@@ -190,6 +190,14 @@ The splash, music levels, the menus and extras of the other ports, options from 
   on the console). read_input: jump let go only after 2 reads without it; panel shows P+hex pad
   when TIMING is on.
 
+## R9 - stuck buttons, diagnostics (docs/R9_NOTES.md)
+
+- Console: buttons stuck in R8, better with TIMING on (slower frames). PC: all fine.
+- Panel line 2 with TIMING: P<pad hex> S<old pad replies> (COMM10 counter unchanged after a
+  refresh). OPTIONS - MOTION SMOOTH/STEPS (opt_smooth, b[5] bit 2 = STEPS).
+- Next: read S from the console. S climbing -> the pad's way (port / Sub-CPU: CMD 48 at 60 Hz);
+  S 0 -> look at the game side again.
+
 ## Next
 
 1. R4/R5 on the console: the timing line on a run to the right (the 64-px dips), on a snowy

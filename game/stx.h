@@ -76,6 +76,7 @@ static inline fx lerp_fx(fx prev, fx now)
 	return prev + (fx)(((d >> 4) * interp_a) >> 4);
 }
 void objects_interp_save(void);
+uint16_t yt_pad_tick(void);              /* R9: the 68000's counter that came with the last pad reply */
 void objects_interp_reset(void);
 #define STEPS(ms) ((ms) / STEP_MS)
 
@@ -266,7 +267,7 @@ void ps_reset(void);                   /* PlayerStatus::reset (lives: OPTIONS - 
 extern fx scroll_x;                    /* the camera, units (World::scrolling) */
 extern int cam_y;                      /* units (ours: the 32X shows 352 of SuperTux's 480 lines) */
 extern uint32_t game_ms, global_frame;
-extern int opt_music, opt_timing, opt_swap, opt_lives, opt_parallax;
+extern int opt_music, opt_timing, opt_swap, opt_lives, opt_parallax, opt_smooth;
 void trybreakbrick(int x, int y, int small, int dir);
 void tryemptybox(int x, int y, int dir);
 void trygrabdistro(int x, int y, int bounce);
