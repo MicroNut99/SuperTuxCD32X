@@ -171,6 +171,13 @@ The splash, music levels, the menus and extras of the other ports, options from 
 - Far snowflakes skipped over tiles (no overlay pass for snow).
 - PC: ST_STATS, ST_NOPARTICLES.
 
+## R6 - smooth motion (docs/R6_NOTES.md)
+
+- R5 on the console: F 47-60, W 5-10 ms, but jerky: 100 Hz steps on a 60 Hz screen (2,2,1).
+- interp_save before each step (camera, Tux, particles; objects_interp_save), step_clock sets
+  interp_a; game_draw_world draws at lerp_fx(prev, now) and puts the positions back. wmap.c the
+  same for map Tux.
+
 ## Next
 
 1. R4/R5 on the console: the timing line on a run to the right (the 64-px dips), on a snowy

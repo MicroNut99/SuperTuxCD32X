@@ -844,31 +844,74 @@ void objects_collisions(void)
 	while (nbad > 0 && !bad[nbad - 1].used) nbad--;
 }
 
+/* R5: the positions before the last step (stx.h lerp_fx), valid only for what was in use then */
+static fx ip_bad[MAX_BAD][2], ip_up[MAX_UP][3], ip_bul[MAX_BULLETS][2], ip_bd[MAX_BD], ip_bb[MAX_BB][2];
+static fx ip_bob[MAX_BOB], ip_fs[MAX_FS];
+static uint8_t ip_bad_ok[MAX_BAD], ip_up_ok[MAX_UP], ip_bul_ok[MAX_BULLETS], ip_bd_ok[MAX_BD];
+static uint8_t ip_bb_ok[MAX_BB], ip_bob_ok[MAX_BOB], ip_fs_ok[MAX_FS];
+
+void objects_interp_reset(void)
+{
+	memset(ip_bad_ok, 0, sizeof ip_bad_ok); memset(ip_up_ok, 0, sizeof ip_up_ok);
+	memset(ip_bul_ok, 0, sizeof ip_bul_ok); memset(ip_bd_ok, 0, sizeof ip_bd_ok);
+	memset(ip_bb_ok, 0, sizeof ip_bb_ok); memset(ip_bob_ok, 0, sizeof ip_bob_ok);
+	memset(ip_fs_ok, 0, sizeof ip_fs_ok);
+}
+
+void objects_interp_save(void)
+{
+	for (int i = 0; i < nbad; i++)
+	{
+		ip_bad_ok[i] = bad[i].used;
+		ip_bad[i][0] = bad[i].x; ip_bad[i][1] = bad[i].y;
+	}
+	for (int i = 0; i < MAX_UP; i++)
+	{
+		ip_up_ok[i] = ups[i].used;
+		ip_up[i][0] = ups[i].x; ip_up[i][1] = ups[i].y; ip_up[i][2] = ups[i].h;
+	}
+	for (int i = 0; i < MAX_BULLETS; i++)
+	{
+		ip_bul_ok[i] = bullets[i].used;
+		ip_bul[i][0] = bullets[i].x; ip_bul[i][1] = bullets[i].y;
+	}
+	for (int i = 0; i < MAX_BD; i++) { ip_bd_ok[i] = bds[i].used; ip_bd[i] = bds[i].y; }
+	for (int i = 0; i < MAX_BB; i++) { ip_bb_ok[i] = bbs[i].used; ip_bb[i][0] = bbs[i].x; ip_bb[i][1] = bbs[i].y; }
+	for (int i = 0; i < MAX_BOB; i++) { ip_bob_ok[i] = bobs[i].used; ip_bob[i] = bobs[i].offset; }
+	for (int i = 0; i < MAX_FS; i++) { ip_fs_ok[i] = fss[i].used; ip_fs[i] = fss[i].y; }
+}
+
+/* where to draw: between the kept position and now (as it is now if it was not in use) */
+static fx ip(const fx *prev, uint8_t ok, fx now) { return ok ? lerp_fx(*prev, now) : now; }
+
 void objects_draw_back(int cx, int cy, uint32_t ms)
 {
 	const int sx = FX_INT(scroll_x);
 	for (int i = 0; i < MAX_BD; i++) if (bds[i].used)
-		tile_draw(coin_tile, ms, bds[i].x, FX_INT(bds[i].y), cx, cy);
+		tile_draw(coin_tile, ms, bds[i].x, FX_INT(ip(&ip_bd[i], ip_bd_ok[i], bds[i].y)), cx, cy);
 	for (int i = 0; i < MAX_BOB; i++) if (bobs[i].used)
-		tile_draw(bobs[i].shape, ms, bobs[i].x, bobs[i].y + FX_INT(bobs[i].offset), cx, cy);
+		tile_draw(bobs[i].shape, ms, bobs[i].x, bobs[i].y + FX_INT(ip(&ip_bob[i], ip_bob_ok[i], bobs[i].offset)), cx, cy);
 	for (int i = 0; i < nbad; i++)
 	{
 		BadGuy *b = &bad[i];
 		if (!b->used || b->removable || !b->seen) continue;
-		if (bx(b) <= sx - 32 || bx(b) >= sx + VIEW_W_U) continue;
+		const int x = FX_INT(ip(&ip_bad[i][0], ip_bad_ok[i], b->x)), y = FX_INT(ip(&ip_bad[i][1], ip_bad_ok[i], b->y));
+		if (x <= sx - 32 || x >= sx + VIEW_W_U) continue;
 		const int s = b->dir ? b->sr : b->sl;
-		if (s >= 0) spr_draw(s, ms, bx(b), by(b), cx, cy);
+		if (s >= 0) spr_draw(s, ms, x, y, cx, cy);
 	}
 	for (int i = 0; i < MAX_UP; i++)
 	{
 		Upgrade *u = &ups[i];
 		if (!u->used) continue;
-		const int h = FX_INT(u->h);
-		if (h < 32) spr_draw_part(up_sprite(u->kind), FX_INT(u->x), FX_INT(u->y) + 32 - h, h, cx, cy);
-		else spr_draw(up_sprite(u->kind), ms, FX_INT(u->x), FX_INT(u->y), cx, cy);
+		const int x = FX_INT(ip(&ip_up[i][0], ip_up_ok[i], u->x)), y = FX_INT(ip(&ip_up[i][1], ip_up_ok[i], u->y));
+		const int h = FX_INT(ip(&ip_up[i][2], ip_up_ok[i], u->h));
+		if (h < 32) spr_draw_part(up_sprite(u->kind), x, y + 32 - h, h, cx, cy);
+		else spr_draw(up_sprite(u->kind), ms, x, y, cx, cy);
 	}
 	for (int i = 0; i < MAX_BULLETS; i++) if (bullets[i].used)
-		spr_draw(S_BULLET, ms, FX_INT(bullets[i].x), FX_INT(bullets[i].y), cx, cy);
+		spr_draw(S_BULLET, ms, FX_INT(ip(&ip_bul[i][0], ip_bul_ok[i], bullets[i].x)),
+		         FX_INT(ip(&ip_bul[i][1], ip_bul_ok[i], bullets[i].y)), cx, cy);
 	for (int i = 0; i < MAX_BB; i++) if (bbs[i].used)
 	{
 		/* BrokenBrick::draw: a 16x16-unit piece of the brick (8x8 pixels: YATSSD's narrowest
@@ -879,7 +922,8 @@ void objects_draw_back(int cx, int cy, uint32_t ms)
 		const uint8_t *src = tile_px + YT_TILE * YT_TILE * t->first;
 		const int ox = (i & 1) * 8, oy = (i >> 1 & 1) * 8;
 		for (int r = 0; r < 8; r++) memcpy(piece + 8 * r, src + (oy + r) * YT_TILE + ox, 8);
-		yt_sprite(px_of(FX_INT(bbs[i].x)) - cx, px_of(FX_INT(bbs[i].y)) - cy, 8, 8, piece);
+		yt_sprite(px_of(FX_INT(ip(&ip_bb[i][0], ip_bb_ok[i], bbs[i].x))) - cx,
+		          px_of(FX_INT(ip(&ip_bb[i][1], ip_bb_ok[i], bbs[i].y))) - cy, 8, 8, piece);
 	}
 }
 
@@ -890,7 +934,7 @@ void objects_draw_front(int cx, int cy)
 	{
 		put_dec(t, (uint32_t)fss[i].value, 1);
 		const int x = px_of(fss[i].x + 16) - cx - text_width(F_GOLD, t) / 2;
-		const int y = px_of(FX_INT(fss[i].y)) - cy;
+		const int y = px_of(FX_INT(ip(&ip_fs[i], ip_fs_ok[i], fss[i].y))) - cy;
 		text_at(F_GOLD, x, y, t);
 	}
 }

@@ -59,6 +59,24 @@ static inline int px_of(int u) { return u >> 1; }
 #define VIEW_W_U  640                  /* the view in units: SuperTux's whole width ... */
 #define VIEW_H_U  352                  /* ... and 352 of its 480 lines (176 pixels) */
 #define STEP_MS   10                   /* SuperTux's frame_ratio 1 */
+/* R5: drawing BETWEEN the last two steps. The world takes 10 ms steps (100 a second) but the
+ * 32X shows 60 pictures a second, so a frame gets 1 or 2 steps (2, 2, 1, 2, 2, 1 ...): the
+ * world moved 20, 20, 10 ms between pictures and scrolling juddered even at 60 frames a second
+ * (Micronut99's R5 video: "Not smooth at all"). Before each step the positions are kept
+ * (interp_save); a picture draws everything at prev + (now - prev) x interp_a / 256, where
+ * interp_a is how far the clock is into the next step - so the world moves evenly with the
+ * clock. One step (10 ms) behind; positions that jump (a reset point, snow wrapping round,
+ * something new) are drawn where they are. */
+extern int interp_a;                   /* 0..256 */
+extern int interp_on;                  /* 0 after world_start until the first step */
+static inline fx lerp_fx(fx prev, fx now)
+{
+	const fx d = now - prev;
+	if (!interp_on || d > (64 << 16) || d < -(64 << 16)) return now;
+	return prev + (fx)(((d >> 4) * interp_a) >> 4);
+}
+void objects_interp_save(void);
+void objects_interp_reset(void);
 #define STEPS(ms) ((ms) / STEP_MS)
 
 /* SuperTux 0.1.3 src/defines.h, player.h, badguy.cpp, special.cpp (per 10 ms step) */

@@ -2,7 +2,7 @@
 
 SuperTux 0.1.3 ("Milestone 1", 2004 – the classic platformer with Tux) on the **Sega CD32X**,
 drawn with Victor Luchits' **YATSSD** tile renderer on the boot, cart and Sub-CPU layers of the
-Hurrican CD32X port. **Version R5.** The whole game runs from one CD: the title with its demo
+Hurrican CD32X port. **Version R6.** The whole game runs from one CD: the title with its demo
 level, Icyisland and both Bonus Islands with their world maps, all 76 levels, every bad guy and
 power-up, CD music, PCM sound effects, saving and high scores. The levels are kept in a 4 MB RAM
 cart once they have been read from the disc.
@@ -42,7 +42,7 @@ libxmp-lite), and so are the sound effects, the pictures and the splash.
 1. The first run fetches SuperTux 0.1.3.
 2. The build converts the data, makes the splash, the sound effects and the CD tracks, checks
    the game on the PC (`host/`), builds the SH2 program, the loader and the Sub-CPU side.
-3. **Burn `cd32x/subcpu/SuperTuxR5.cue`** (with its `.bin`). It has the data track and the 12
+3. **Burn `cd32x/subcpu/SuperTuxR6.cue`** (with its `.bin`). It has the data track and the 12
    music tracks.
 
 `DATA_ONLY=1 ./build.sh` stops after the data and the PC check (no Sega toolchain needed).
@@ -137,6 +137,12 @@ the timing line counts real buffer swaps against the refresh counter. A frame no
 | H – the status panel | 7–9 ms | 1–4 ms |
 | W – waiting for the screen refresh | 0.5–6 ms | 6–9 ms |
 
+### R6
+- **Smooth motion.** SuperTux moves the world in 10 ms steps; the screen shows a picture every
+  16.7 ms, so pictures were 2, 2, 1, 2, 2, 1 steps apart and the view and Tux jerked even at
+  60 frames a second. Each picture now draws everything between the last two steps, where it
+  is at the clock's time (the rules are unchanged; only where things are drawn).
+
 ### R5
 Measured on the PC (cells the tiler draws a frame, Tux running): snowy levels 41–50 → 24–30,
 Above the Arctic Skies (clouds) 80 → 48, Welcome to Antarctica 14 → 13. Not yet measured on the
@@ -189,6 +195,7 @@ console.
 | R3 | 38–56 fps: one merged picture a cell, both SH2s drawing, exact sprite marks, a cheap panel, the busy code in fast RAM. The cart as a store of levels: the title's level from power-on, levels read once. |
 | R4 | The 64-pixel re-anchor moves the canvas's pixels instead of redrawing the screen. *Options → Background: Moves* gives SuperTux's slower-scrolling backgrounds (off by default; their pictures are read into the cart with the level). Small sprites at the screen edge are drawn instead of dropped. |
 | R5 | The backgrounds are no longer sharpened. Fewer cells drawn a frame: sprites cut to their visible pixels, the cells listed and shared between the two SH2s without a lock per cell, clouds kept in the picture, animated tiles redrawn only when theirs changed, far snow not drawn over tiles. Snowy levels draw about 40 % fewer cells, the cloud level 40 % fewer. |
+| R6 | Smooth motion: the world's 10 ms steps against the 60 Hz screen made pictures 2, 2, 1 steps apart (jerky even at 60 fps); everything is now drawn between the last two steps, at the clock's time. |
 
 ## Files
 | Path | Contents |
@@ -206,7 +213,7 @@ console.
 | `tools/stx_convert.py`, `stx_pack.py` | SuperTux 0.1.3 → the 32X's data; the disc's files and the cart layout |
 | `tools/make_stx_sfx.py`, `make_stx_splash.py`, `stx_music.sh` | sound effects, the splash, the CD tracks |
 | `tools/check_boot.py`, `check_sdram_code.py`, `where.sh` | build checks; naming the addresses on a red exception screen |
-| `docs/` | developer notes: `STX_HANDOFF.md`, `R5_NOTES.md`, `R4_NOTES.md`, `R3_NOTES.md`, `R2_NOTES.md`, `R1B_NOTES.md`, `BOOT_PATH_NOTES.md` |
+| `docs/` | developer notes: `STX_HANDOFF.md`, `R6_NOTES.md`, `R5_NOTES.md`, `R4_NOTES.md`, `R3_NOTES.md`, `R2_NOTES.md`, `R1B_NOTES.md`, `BOOT_PATH_NOTES.md` |
 
 ## Credits
 - **SuperTux** – Bill Kendrick (original author), Tobias Glaesser (project leader), Ricardo Cruz

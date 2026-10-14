@@ -1,5 +1,5 @@
 #!/bin/bash
-# SuperTux CD32X - builds the R5 disc: the whole of SuperTux 0.1.3 (Icyisland's 26 levels, both
+# SuperTux CD32X - builds the R6 disc: the whole of SuperTux 0.1.3 (Icyisland's 26 levels, both
 # Bonus Islands, the title with its demo, world maps, bad guys, power-ups, saves), half size,
 # sharpened.
 #
@@ -23,7 +23,7 @@ SRC="${SUPERTUX:-$HERE/SuperTux-0.1.3}"
 OUT="$HERE/build"
 ROMS="$HERE/cd32x/subcpu/ROMS"
 MARKER="SH2-OPENLARA-CD-OL1-LOADER"
-DISC=SuperTuxR5
+DISC=SuperTuxR6
 mkdir -p "$OUT" "$ROMS"
 
 echo "==> boot path check (must be Hurrican CD32X's, unchanged)"

@@ -222,11 +222,22 @@ static void tux_pos(int *x, int *y)
 	else if (direction == D_SOUTH) *y += o;
 }
 
+/* R5: Tux's place before the last step, to draw him between steps (stx.h lerp_fx) */
+static int ip_x, ip_y, ip_ok;
+
 /* ------------------------------------------------------------------ drawing */
 static void wmap_draw(void)
 {
 	int x, y;
 	tux_pos(&x, &y);
+	if (ip_ok)
+	{
+		const int on = interp_on;
+		interp_on = 1;
+		x = FX_INT(lerp_fx((fx)ip_x << 16, (fx)x << 16));
+		y = FX_INT(lerp_fx((fx)ip_y << 16, (fx)y << 16));
+		interp_on = on;
+	}
 	int cx = x - VIEW_W_U / 2, cy = y - VIEW_H_U / 2;
 	if (cx > map_w * 32 - VIEW_W_U) cx = map_w * 32 - VIEW_W_U;
 	if (cy > map_h * 32 - VIEW_H_U) cy = map_h * 32 - VIEW_H_U;
@@ -326,6 +337,7 @@ int wmap_run(int m, int si)
 	map_show();
 	music(map_track);
 	step_clock_reset();
+	ip_ok = 0;                     /* R5: nothing to draw between yet */
 	for (;;)
 	{
 		uint16_t hit;
@@ -347,6 +359,7 @@ int wmap_run(int m, int si)
 				break;
 			}
 			step_clock_reset();
+			ip_ok = 0;                     /* R5: nothing to draw between yet */
 			continue;
 		}
 		const int steps = step_clock();
@@ -395,6 +408,7 @@ int wmap_run(int m, int si)
 			map_show();
 			music(map_track);
 			step_clock_reset();
+			ip_ok = 0;                     /* R5: nothing to draw between yet */
 			if (r != ES_LEVEL_FINISHED) input_direction = D_NONE;
 			continue;
 		}
@@ -407,6 +421,7 @@ int wmap_run(int m, int si)
 			while (plat_ticks_ms() - t0 < 1000) frame();   /* SDL_Delay(1000) */
 			pad_read(0);
 			step_clock_reset();
+			ip_ok = 0;                     /* R5: nothing to draw between yet */
 			continue;
 		}
 		/* tux->update(delta); tux->set_direction(input): the direction held (or the one chosen
@@ -414,6 +429,8 @@ int wmap_run(int m, int si)
 		if (in != D_NONE) input_direction = in;
 		for (int i = 0; i < steps; i++)
 		{
+			tux_pos(&ip_x, &ip_y);
+			ip_ok = 1;
 			tux_update();
 			input_direction = in;
 			if (passive_t) passive_t--;

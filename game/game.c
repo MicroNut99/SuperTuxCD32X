@@ -64,7 +64,8 @@ uint16_t pad_read(uint16_t *hit)
 }
 
 static uint32_t clock_last, clock_acc;
-void step_clock_reset(void) { clock_last = plat_ticks_ms(); clock_acc = 0; }
+int interp_a, interp_on;               /* stx.h lerp_fx */
+void step_clock_reset(void) { clock_last = plat_ticks_ms(); clock_acc = 0; interp_a = 0; }
 int step_clock(void)
 {
 	const uint32_t now = plat_ticks_ms();
@@ -74,6 +75,7 @@ int step_clock(void)
 	clock_acc += d;
 	int steps = (int)(clock_acc / STEP_MS);
 	clock_acc -= (uint32_t)steps * STEP_MS;
+	interp_a = (int)(clock_acc * 256u / STEP_MS);   /* R5: how far into the next step */
 	return steps > 10 ? 10 : steps;
 }
 
@@ -383,8 +385,22 @@ static int tux_is_dead(void)
 }
 
 /* World::action */
+/* R5: the positions before a step, to draw between steps (stx.h lerp_fx) */
+static fx ip_scroll_x, ip_tux_x, ip_tux_y;
+static int ip_cam_y;
+static fx ip_part[NSNOW > NCLOUD ? NSNOW : NCLOUD][2];
+static void interp_save(void)
+{
+	ip_scroll_x = scroll_x; ip_cam_y = cam_y;
+	ip_tux_x = tux.x; ip_tux_y = tux.y;
+	for (int i = 0; i < nparts; i++) { ip_part[i][0] = parts[i].x; ip_part[i][1] = parts[i].y; }
+	objects_interp_save();
+	interp_on = 1;
+}
+
 static void world_action(void)
 {
+	interp_save();
 	tux_action();
 	check_bounds();
 	scrolling();
@@ -418,6 +434,8 @@ static void play_music_type(int t)
  * at the nearest reset point behind where he was (GameSession::restart_level) */
 static void world_start(int from_x)
 {
+	interp_on = 0;                     /* R5: nothing to draw between until the first step */
+	objects_interp_reset();
 	level_reset_map();
 	counting_distros = 0;
 	objects_start();
@@ -648,7 +666,38 @@ static void clouds_draw(int cx, int cy)
 
 static uint32_t stat_cells;            /* the cells the tiler drew this frame (N) */
 
+static void draw_world_now(void);
+
+/* R5: the camera, Tux and the particles moved to where they were interp_a / 256 of the way
+ * from the last step's start to now, for the drawing only (the objects do it in objects.c) */
 void game_draw_world(void)
+{
+	const fx keep_scroll_x = scroll_x, keep_tux_x = tux.x, keep_tux_y = tux.y;
+	const int keep_cam_y = cam_y;
+	static fx keep_part[NSNOW > NCLOUD ? NSNOW : NCLOUD][2];
+	if (interp_on)
+	{
+		scroll_x = lerp_fx(ip_scroll_x, scroll_x);
+		cam_y = FX_INT(lerp_fx((fx)ip_cam_y << 16, (fx)cam_y << 16));
+		tux.x = lerp_fx(ip_tux_x, tux.x);
+		tux.y = lerp_fx(ip_tux_y, tux.y);
+		for (int i = 0; i < nparts; i++)
+		{
+			keep_part[i][0] = parts[i].x; keep_part[i][1] = parts[i].y;
+			parts[i].x = lerp_fx(ip_part[i][0], parts[i].x);
+			parts[i].y = lerp_fx(ip_part[i][1], parts[i].y);
+		}
+	}
+	draw_world_now();
+	if (interp_on)
+	{
+		scroll_x = keep_scroll_x; cam_y = keep_cam_y;
+		tux.x = keep_tux_x; tux.y = keep_tux_y;
+		for (int i = 0; i < nparts; i++) { parts[i].x = keep_part[i][0]; parts[i].y = keep_part[i][1]; }
+	}
+}
+
+static void draw_world_now(void)
 {
 	uint32_t t0 = plat_prof_us(), t1;
 	int cx = px_of(FX_INT(scroll_x)), cy = px_of(cam_y);
