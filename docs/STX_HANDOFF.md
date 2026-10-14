@@ -184,6 +184,12 @@ The splash, music levels, the menus and extras of the other ports, options from 
 - reanchor: vertical moves split by columns on both SH2s; cell_us16 / move_us[] measured, the
   cheaper of move and full redraw chosen (re-sampled every 16th). PC: ST_REANCHOR=move|draw.
 
+## R8 - jumping with A (docs/R8_NOTES.md)
+
+- Console: A gave a tiny jump, C a full one (same bit test in the game -> the A bit drops out
+  on the console). read_input: jump let go only after 2 reads without it; panel shows P+hex pad
+  when TIMING is on.
+
 ## Next
 
 1. R4/R5 on the console: the timing line on a run to the right (the 64-px dips), on a snowy

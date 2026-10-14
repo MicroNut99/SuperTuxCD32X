@@ -52,10 +52,12 @@ void music_again(void)
 	music(opt_music ? track_wanted : 0);
 }
 
+static uint16_t pad_raw;               /* the pad as the console sent it (R8) */
 static uint16_t pad_prev = 0xFFFF;     /* nothing counts as pressed until it is let go once */
 uint16_t pad_read(uint16_t *hit)
 {
 	uint16_t p = plat_read_pad();
+	pad_raw = p;                       /* R8: shown with the timing line (draw_status) */
 	if (opt_swap)
 		p = (uint16_t)((p & ~(PAD_A | PAD_B)) | ((p & PAD_A) ? PAD_B : 0) | ((p & PAD_B) ? PAD_A : 0));
 	if (hit) *hit = p & ~pad_prev;
@@ -766,8 +768,18 @@ static void draw_status(void)
 	if (title_of != session_level) { strncpy(title, level_title(session_level), 47); title_of = session_level; }
 	const char *t = title;
 	int n = 0;
-	while (t[n] && n < 28) { q[n] = t[n]; n++; }
+	const int maxn = opt_timing ? 22 : 28;
+	while (t[n] && n < maxn) { q[n] = t[n]; n++; }
 	q[n] = 0;
+	if (opt_timing)
+	{
+		/* R8: the raw pad in hex after the name (B 0010, C 0020, A 0040, START 0080) */
+		static const char hx[] = "0123456789ABCDEF";
+		char *e = q + n;
+		*e++ = ' '; *e++ = 'P';
+		for (int k = 12; k >= 0; k -= 4) *e++ = hx[(pad_raw >> k) & 15];
+		*e = 0;
+	}
 	if (opt_timing) timing_line(l3);
 	else put_str(l3, "");
 	panel_show(l1, l2, l3, end_sequence ? col_yellow : col_white);
@@ -925,7 +937,16 @@ static void read_input(uint16_t pad)
 	tux.in_left = (pad & PAD_LEFT) != 0;
 	tux.in_right = (pad & PAD_RIGHT) != 0;
 	tux.in_down = (pad & PAD_DOWN) != 0;
-	tux.in_up = (pad & (PAD_C | PAD_A)) != 0;        /* jump */
+	/* jump. R8: let go only after two pad reads in a row without it. Micronut99 (R6/R7 on the
+	 * console): with A, Tux "jumps a tiny bit"; with C he jumps fully. On the PC A and C are
+	 * the same bit test, so on the console the A bit drops out for a read just after the jump
+	 * starts (A shares the pad's TH-low read with START, the 6-button read sequence) - and a
+	 * jump let go stops climbing (handle_vertical: vy = 0). One read missing no longer counts;
+	 * a real let-go is seen one frame later (about 17 ms). */
+	static int up_off = 2;             /* pad reads in a row without a jump button */
+	if (pad & (PAD_C | PAD_A)) up_off = 0;
+	else if (up_off < 2) up_off++;
+	tux.in_up = up_off < 2;
 	tux.in_fire = (pad & PAD_B) != 0;                /* run, shoot, carry */
 }
 
@@ -980,6 +1001,9 @@ int game_play(int li)
 		plat_wait_flip();
 		t1 = plat_prof_us(); tacc[T_WAIT] += t1 - t0;
 		game_draw_world();
+#ifndef OJ32X_MARS
+		if (getenv("ST_TUXY")) fprintf(stderr, "TY %d %d\n", FX_INT(tux.y), FX_INT(tux.x));   /* PC: Tux's place a frame */
+#endif
 		draw_status();
 		timing_frame();
 #ifndef OJ32X_MARS
