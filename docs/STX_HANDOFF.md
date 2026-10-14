@@ -178,6 +178,12 @@ The splash, music levels, the menus and extras of the other ports, options from 
   interp_a; game_draw_world draws at lerp_fx(prev, now) and puts the positions back. wmap.c the
   same for map Tux.
 
+## R7 - up / down re-anchor (docs/R7_NOTES.md)
+
+- R6 on the console: F 33-40 / T 11-15 while the view went up and down (one-SH2 vertical moves).
+- reanchor: vertical moves split by columns on both SH2s; cell_us16 / move_us[] measured, the
+  cheaper of move and full redraw chosen (re-sampled every 16th). PC: ST_REANCHOR=move|draw.
+
 ## Next
 
 1. R4/R5 on the console: the timing line on a run to the right (the 64-px dips), on a snowy

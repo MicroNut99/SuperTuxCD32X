@@ -987,8 +987,10 @@ int game_play(int li)
 		{
 			/* PC only: what this frame drew - the merged cells, the sprites and their pixels */
 			extern uint32_t yt_stat_spr, yt_stat_px;
+			extern int yt_stat_reanchor[3];
 			static uint32_t f;
-			fprintf(stderr, "STAT %u %u %u %u %d %d\n", f++, stat_cells, yt_stat_spr, yt_stat_px, view_cx, view_cy);
+			fprintf(stderr, "STAT %u %u %u %u %d %d %d %d %d\n", f++, stat_cells, yt_stat_spr, yt_stat_px, view_cx, view_cy,
+			        yt_stat_reanchor[0], yt_stat_reanchor[1], yt_stat_reanchor[2]);
 		}
 		{ extern uint32_t yt_stat_spr, yt_stat_px; yt_stat_spr = yt_stat_px = 0; }
 #endif

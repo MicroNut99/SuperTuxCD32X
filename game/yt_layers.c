@@ -86,44 +86,100 @@ void yt_invalidate(void)
  * sideways (or 16 up / down), Vic's draw_tile_layer starts numbering the canvas cells from
  * another world tile - every cell then holds the "wrong" tile and the whole screen was drawn
  * again (R3 on the console: N 76-103, the dips to 38-42 fps). Now the canvas's pixels and the
- * dirty matrix are moved along by the same number of cells instead (32-bit copies, both SH2s
- * when only the columns move): only the cells that come in new are drawn. A move of more than
- * two steps (a jump of the camera) still redraws everything. */
+ * dirty matrix are moved along by the same number of cells instead (32-bit copies, both SH2s):
+ * only the cells that come in new are drawn. A move of more than two steps (a jump of the
+ * camera) still redraws everything - and R6 redraws instead of moving whenever that measured
+ * cheaper on the console (below). */
 #define CANVAS_W (YT_PITCH)
 #define CANVAS_H (YT_ROWS / YT_TILE * YT_TILE)   /* 192: the canvas cells' lines */
-typedef struct { int dx, dy, y0, y1; } MoveJob;
+typedef struct { int dx, dy, y0, y1, by_cols; } MoveJob;
 
 static void move_lines(void *arg, int which)
 {
 	const MoveJob *m = (const MoveJob *)arg;
-	const int half = (m->y0 + m->y1) / 2;
-	const int a = which ? half : m->y0, b = which ? m->y1 : half;
 	uint8_t *canvas = yt_canvas();
 	/* destination line y takes source line y + dy; inside it, x takes x + dx */
-	const int x0 = m->dx < 0 ? -m->dx : 0, x1 = m->dx > 0 ? CANVAS_W - m->dx : CANVAS_W;
+	int x0 = m->dx < 0 ? -m->dx : 0, x1 = m->dx > 0 ? CANVAS_W - m->dx : CANVAS_W;
+	int a = m->y0, b = m->y1;
+	if (m->by_cols)
+	{
+		/* R6: an up / down move (dx 0) shared by columns - each CPU moves every line, its half
+		 * of the columns, in the safe order; the lines cannot be shared (they overlap) */
+		const int mid = CANVAS_W / 2;
+		if (which) x0 = mid; else x1 = mid;
+	}
+	else
+	{
+		const int half = (m->y0 + m->y1) / 2;
+		if (which) a = half; else b = half;
+	}
 	const int up = m->dy >= 0;
 	for (int k = a; k < b; k++)
 	{
-		const int y = up ? k : (m->y0 + m->y1 - 1 - k);
+		const int y = up ? k : (a + b - 1 - k);
 		const int sy = y + m->dy;
 		if (sy < 0 || sy >= CANVAS_H) continue;
 		yt_move_row(canvas + y * CANVAS_W + x0, canvas + sy * CANVAS_W + x0 + m->dx, x1 - x0);
 	}
 }
 
+/* R6: MOVE OR REDRAW, measured on the console. Moving the canvas reads the 32X frame buffer
+ * (slow); drawing the view again reads the tile pictures from the cart and only writes the frame
+ * buffer. Which one is cheaper was not known (R4 chose moving; R5 on the console: F 33-40 while
+ * the view went up and down with Tux, T 11-15 ms - up / down moves were done by one SH2 and
+ * happen every 16 lines, in each buffer). So the game times both as it plays: the microseconds
+ * a cell costs the tiler (frames with 32 cells or more) and each kind of move (sideways; with
+ * up / down), and re-anchors the cheaper way - trying the move again now and then. */
+uint32_t plat_prof_us(void);
+static uint32_t cell_us16;             /* microseconds a cell x 16, running average (0: unknown) */
+static uint32_t move_us[2];            /* a move: [0] sideways only, [1] with up / down (0: unknown) */
+static uint8_t redraws_since_move[2];
+#define VIEW_CELLS ((YT_VIEW_W / YT_TILE + 1) * (YT_VIEW_H / YT_TILE + 1))
+
+#ifndef OJ32X_MARS
+#include <stdlib.h>
+static int redraw_forced_bad(int dc, int dr, int ctx, int cty)   /* a move that must redraw */
+{
+	return dc < -2 * (int)tm.scroll_tiles_hor || dc > 2 * (int)tm.scroll_tiles_hor || dr < -2 || dr > 2
+	       || dc >= ctx || -dc >= ctx || dr >= cty || -dr >= cty;
+}
+int yt_stat_reanchor[3];               /* PC only (ST_STATS): sideways, up/down, both moves */
+#endif
 static void reanchor(int dc, int dr)
 {
+#ifndef OJ32X_MARS
+	yt_stat_reanchor[dc && dr ? 2 : dr ? 1 : 0]++;
+#endif
 	const int ctx = (int)tm.canvas_tiles_hor, cty = (int)tm.canvas_tiles_ver;
 	int16_t *dirty = yt_extrafb() + 3;
-	if (dc < -2 * (int)tm.scroll_tiles_hor || dc > 2 * (int)tm.scroll_tiles_hor || dr < -2 || dr > 2
-	    || dc >= ctx || -dc >= ctx || dr >= cty || -dr >= cty)
+	const int kind = dr != 0;
+	int redraw = dc < -2 * (int)tm.scroll_tiles_hor || dc > 2 * (int)tm.scroll_tiles_hor || dr < -2 || dr > 2
+	             || dc >= ctx || -dc >= ctx || dr >= cty || -dr >= cty;
+	if (!redraw && move_us[kind] && cell_us16 && redraws_since_move[kind] < 16
+	    && cell_us16 * VIEW_CELLS / 16 < move_us[kind])
+	{
+		redraw = 1;                    /* drawing the view is cheaper (measured) */
+		redraws_since_move[kind]++;
+	}
+#ifndef OJ32X_MARS
+	{   /* PC checks: ST_REANCHOR=move / draw forces one way (both must give the same picture) */
+		const char *e = getenv("ST_REANCHOR");
+		if (e && !redraw_forced_bad(dc, dr, ctx, cty)) redraw = e[0] == 'd';
+	}
+#endif
+	if (redraw)
 	{
 		for (int i = 0; i < ctx * cty; i++) dirty[i] = -1;
 		return;
 	}
-	MoveJob m = { dc * YT_TILE, dr * YT_TILE, 0, CANVAS_H };
+	redraws_since_move[kind] = 0;
+	const uint32_t t0 = plat_prof_us();
+	MoveJob m = { dc * YT_TILE, dr * YT_TILE, 0, CANVAS_H, 0 };
 	if (dr == 0) plat_parallel(move_lines, &m);   /* the lines are independent: both SH2s */
+	else if (dc == 0) { m.by_cols = 1; plat_parallel(move_lines, &m); }   /* R6: both SH2s */
 	else { move_lines(&m, 0); move_lines(&m, 1); }
+	const uint32_t dt = plat_prof_us() - t0;
+	move_us[kind] = move_us[kind] ? (move_us[kind] * 3 + dt) / 4 : dt;
 	/* the dirty matrix the same way: cell (c, r) takes (c + dc, r + dr); new cells: -1 */
 	int16_t old[24 * 13];
 	const int n = ctx * cty < (int)(sizeof old / sizeof old[0]) ? ctx * cty : (int)(sizeof old / sizeof old[0]);
@@ -331,8 +387,14 @@ static int yt_layer(int layer)
 	}
 	CellsJob job;
 	job.n = n;
+	const uint32_t t0 = plat_prof_us();
 	if (n <= YT_SOLO_CELLS) { cells_job(&job, 0); cells_job(&job, 1); }
 	else plat_parallel(cells_job, &job);
+	if (n >= 32)                       /* R6: what a cell costs (for reanchor's choice) */
+	{
+		const uint32_t per16 = (plat_prof_us() - t0) * 16u / (uint32_t)n;
+		cell_us16 = cell_us16 ? (cell_us16 * 3 + per16) / 4 : per16;
+	}
 	return n;
 #endif
 }

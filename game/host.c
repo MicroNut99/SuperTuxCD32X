@@ -13,6 +13,7 @@
  *   ST_STATS=1  (R5) a line a frame on stderr: "STAT frame cells sprites sprite-pixels cx cy"
  *   ST_NOPARTICLES=1  (R5) no snow / clouds (to measure what they cost)
  *   ST_PARALLAX  OPTIONS - BACKGROUND MOVES on (any value)
+ *   ST_REANCHOR=move / draw  (R7) force the way the view re-anchors (both give the same picture)
  */
 #include "plat.h"
 #include "pack.h"
