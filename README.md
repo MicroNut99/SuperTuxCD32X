@@ -2,7 +2,7 @@
 
 SuperTux 0.1.3 ("Milestone 1", 2004 – the classic platformer with Tux) on the **Sega CD32X**,
 drawn with Victor Luchits' **YATSSD** tile renderer on the boot, cart and Sub-CPU layers of the
-Hurrican CD32X port. **Version R10.** The whole game runs from one CD: the title with its demo
+Hurrican CD32X port. **Version R11.** The whole game runs from one CD: the title with its demo
 level, Icyisland and both Bonus Islands with their world maps, all 76 levels, every bad guy and
 power-up, CD music, PCM sound effects, saving and high scores. The levels are kept in a 4 MB RAM
 cart once they have been read from the disc.
@@ -42,7 +42,7 @@ libxmp-lite), and so are the sound effects, the pictures and the splash.
 1. The first run fetches SuperTux 0.1.3.
 2. The build converts the data, makes the splash, the sound effects and the CD tracks, checks
    the game on the PC (`host/`), builds the SH2 program, the loader and the Sub-CPU side.
-3. **Burn `cd32x/subcpu/SuperTuxR10.cue`** (with its `.bin`). It has the data track and the 12
+3. **Burn `cd32x/subcpu/SuperTuxR11.cue`** (with its `.bin`). It has the data track and the 12
    music tracks.
 
 `DATA_ONLY=1 ./build.sh` stops after the data and the PC check (no Sega toolchain needed).
@@ -94,7 +94,7 @@ left/right changes a setting. *Options → Jump* swaps A and B (C/B jump, A runs
 - **Icyisland** (26 levels) and **Bonus Island I and II** (50 levels) with their world maps:
   paths, one-way paths, teleporters, messages, red and green level dots, Tux walking on by
   himself after a level, the ending text and the credits after the last level.
-- **Level Select** (under Bonus Levels): any of the 76 levels on its own.
+- **Level Select** (under Bonus Levels, and in Options from the title): any of the 76 levels on its own.
 - **Tux** small, big and fire, running, skidding, ducking, ice, bonus boxes (coins, eggs, ice
   flowers, herrings, 1-ups), bricks, coins, invincibility, reset points, the time limit with
   hurry-up music, the end-of-level walk.
@@ -213,6 +213,7 @@ console.
 | R8 | Jumping with A: a single pad read without the button no longer cuts the jump short. The timing line shows the raw pad. |
 | R9 | Finding the stuck buttons: the timing panel counts pad replies that came back old (S); Options → Motion turns R6's smooth drawing off to compare. |
 | R10 | Options → Scroll RING: the picture wraps up and down, so the view never has to be shifted when Tux jumps; sideways shifts redraw only what differs and happen early on quiet frames; a strip of old picture (R4–R9) fixed. |
+| R11 | Options → Level Select (from the title): any of the 76 levels. |
 
 ## Files
 | Path | Contents |
@@ -230,7 +231,7 @@ console.
 | `tools/stx_convert.py`, `stx_pack.py` | SuperTux 0.1.3 → the 32X's data; the disc's files and the cart layout |
 | `tools/make_stx_sfx.py`, `make_stx_splash.py`, `stx_music.sh` | sound effects, the splash, the CD tracks |
 | `tools/check_boot.py`, `check_sdram_code.py`, `where.sh` | build checks; naming the addresses on a red exception screen |
-| `docs/` | developer notes: `STX_HANDOFF.md`, `R10_NOTES.md`, `R9_NOTES.md`, `R8_NOTES.md`, `R7_NOTES.md`, `R6_NOTES.md`, `R5_NOTES.md`, `R4_NOTES.md`, `R3_NOTES.md`, `R2_NOTES.md`, `R1B_NOTES.md`, `BOOT_PATH_NOTES.md` |
+| `docs/` | developer notes: `STX_HANDOFF.md`, `R11_NOTES.md`, `R10_NOTES.md`, `R9_NOTES.md`, `R8_NOTES.md`, `R7_NOTES.md`, `R6_NOTES.md`, `R5_NOTES.md`, `R4_NOTES.md`, `R3_NOTES.md`, `R2_NOTES.md`, `R1B_NOTES.md`, `BOOT_PATH_NOTES.md` |
 
 ## Credits
 - **SuperTux** – Bill Kendrick (original author), Tobias Glaesser (project leader), Ricardo Cruz

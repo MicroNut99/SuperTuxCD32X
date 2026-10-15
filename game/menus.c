@@ -428,9 +428,13 @@ static void bg_controls(void)
 		text_mid(F_SMALL, 26 + 14 * i, opt_swap && i >= 1 && i <= 3 ? rows_sw[i] : rows[i]);
 }
 
+static int level_select(void);
+static void play_alone(int li);
+static int options_played;            /* R11: a level was played from OPTIONS - LEVEL SELECT */
+
 void options_page(BgFn bg)
 {
-	enum { O_MUSIC, O_LIVES, O_TIMING, O_BUTTONS, O_BACKGROUND, O_MOTION, O_SCROLL, O_CONTROLS, O_STORY, O_SCORES, O_CREDITS, O_BACK, O_N };
+	enum { O_MUSIC, O_LIVES, O_TIMING, O_BUTTONS, O_BACKGROUND, O_MOTION, O_SCROLL, O_LEVELS, O_CONTROLS, O_STORY, O_SCORES, O_CREDITS, O_BACK, O_N };
 	int sel = 0;
 	static char rows[O_N][32];
 	static const char *items[O_N];
@@ -446,15 +450,27 @@ void options_page(BgFn bg)
 		put_str(rows[O_MOTION], opt_smooth ? "MOTION <SMOOTH>" : "MOTION <STEPS>");
 		/* R10: the canvas wrapping up / down (no re-anchor when the view goes up or down) */
 		put_str(rows[O_SCROLL], opt_ring ? "SCROLL <RING>" : "SCROLL <CLASSIC>");
+		put_str(rows[O_LEVELS], "LEVEL SELECT");
 		put_str(rows[O_CONTROLS], "CONTROLS");
 		put_str(rows[O_STORY], "STORY");
 		put_str(rows[O_SCORES], "HIGH SCORES");
 		put_str(rows[O_CREDITS], "CREDITS");
 		put_str(rows[O_BACK], "BACK");
-		for (int i = 0; i < O_N; i++) items[i] = rows[i];
+		/* R11: LEVEL SELECT only from the title (from a level's pause or the world map it would
+		 * start a level inside another one) */
+		const int from_title = bg == bg_picture;
+		int shown[O_N], ns = 0, at = 0;
+		for (int i = 0; i < O_N; i++)
+		{
+			if (i == O_LEVELS && !from_title) continue;
+			if (i == sel) at = ns;
+			shown[ns] = i;
+			items[ns++] = rows[i];
+		}
 		list_style();
 		m_lr = 1;                      /* LEFT / RIGHT change a setting */
-		const int c = menu_choose("OPTIONS", items, O_N, sel, bg, "LEFT/RIGHT/A CHANGE  B BACK");
+		const int pick = menu_choose("OPTIONS", items, ns, at, bg, "LEFT/RIGHT/A CHANGE  B BACK");
+		const int c = pick < 0 ? -1 : shown[pick];
 		const int d = menu_dir ? menu_dir : 1;
 		m_lr = 0;
 		if (c < 0 || (c == O_BACK && !menu_dir)) break;
@@ -469,6 +485,18 @@ void options_page(BgFn bg)
 		case O_BACKGROUND: opt_parallax ^= 1; break;   /* from the next level read on */
 		case O_MOTION: opt_smooth ^= 1; break;
 		case O_SCROLL: opt_ring ^= 1; yt_set_ring(opt_ring); break;
+		case O_LEVELS:
+		{
+			const int li = level_select();
+			if (li >= 0)
+			{
+				save_store();
+				play_alone(li);
+				options_played = 1;    /* the title starts its demo again */
+				return;
+			}
+			break;
+		}
 		case O_CONTROLS: page_bg = bg; message_screen(bg_controls, "ANY BUTTON: BACK", "", 0, 300, 60000); break;
 		case O_STORY: text_page("INTRO.TXT", PIC_MENU, 0); break;
 		case O_SCORES: hs_new = -1; scores_page(bg); break;
@@ -638,7 +666,13 @@ int main(int argc, char *argv[])
 			if (c == 0) { start_game(); break; }
 			if (c == 1) { bonus_levels(); break; }
 			list_style();
-			if (c == 2) { options_page(bg_picture); music_again(); }
+			if (c == 2)
+			{
+				options_played = 0;
+				options_page(bg_picture);
+				if (options_played) break;   /* R11: back from a level: the demo again */
+				music_again();
+			}
 			if (c == 3) { text_page("CREDITS.TXT", PIC_CREDITS, 1); music_again(); }
 			if (c == 4) { hs_new = -1; scores_page(bg_picture); }
 		}

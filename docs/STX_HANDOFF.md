@@ -207,6 +207,10 @@ The splash, music levels, the menus and extras of the other ports, options from 
   re-anchor keeps the record. yt_epoch / kept flags / drawn flags for the clouds.
 - Fixed: diagonal move half order (R4-R9 strip). PC: ST_TRUTH=1 (reference), ST_CLASSIC=1.
 
+## R11 - level select in Options (docs/R11_NOTES.md)
+
+- R10 on the console: RING smoother. OPTIONS - LEVEL SELECT (only from the title).
+
 ## Next
 
 1. R10 on the console: RING vs CLASSIC while jumping; the sideways catches; clouds.
