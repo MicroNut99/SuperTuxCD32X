@@ -23,7 +23,9 @@ on the 32X: it looks and plays no better than on a PC, and the hardware forces s
 - **A 4MB RAM cart** (battery-backed), in the 32X cartridge slot – required
 - a 3- or 6-button pad
 
-Emulators: Kega Fusion cannot emulate the 4MB RAM cart, so the game does not run there. ares can.
+Emulators: Kega Fusion is the only emulator that boots a CD32X disc, and it cannot emulate the
+4MB RAM cart, so the game stops at the splash there. ares does not emulate the CD32X boot (it
+cannot start Night Trap CD32X either). The game is tested on real hardware.
 
 ## What you need
 | What | Where it goes |

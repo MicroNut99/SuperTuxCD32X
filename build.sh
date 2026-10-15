@@ -83,6 +83,6 @@ echo "==> disc checked: loader + program + splash + packs + sound effects"
 cd "$HERE/cd32x/subcpu" && python3 make_mixed_cd2.py CDROMPlayer.iso "$OUT"/music/Track*.wav --out $DISC
 echo
 echo "==> done:"
-echo "    disc: cd32x/subcpu/$DISC.cue (with its .bin) - for ares / a burner (Fusion cannot emulate the RAM cart)"
+echo "    disc: cd32x/subcpu/$DISC.cue (with its .bin) - for a burner (Fusion cannot emulate the RAM cart)"
 echo "    build/host_frames/         what the PC check drew (PPM)"
 echo "    build/previews/            every level as the 32X will draw it"
