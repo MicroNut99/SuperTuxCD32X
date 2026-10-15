@@ -23,11 +23,12 @@
  *
  * THE SCREEN (Vic's canvas inside Hurrican's frame buffer layout, port/plat_mars.c J15)
  *   frame buffer byte 0x00200  the canvas: 384 bytes a line (canvas_pitch), 200 lines - the
- *                              same place and pitch as Hurrican's ring; used WITHOUT wrapping,
- *                              as YATSSD uses it
+ *                              same place and pitch as Hurrican's ring; CLASSIC uses it without
+ *                              wrapping, as YATSSD does; R10's RING wraps it up / down
+ *                              (game/yt_layers.c, "the canvas and its record")
  *   0x12E00                    the panel: 24 lines of 320 (the HUD and the timing line)
- *   0x14C00                    Vic's "extrafb": the dirty matrix (canvas_yaw = 220 puts it here:
- *                              0x200 + 384 * 220), 3 + 24 * 12 words
+ *   0x14C00                    Vic's "extrafb" (canvas_yaw = 220 puts it here): R3-R9's dirty
+ *                              matrix; R10 keeps its record in SDRAM instead
  *   0x16000                    the platform layer's blank line (the border lines)
  *   R2 ("Sharpened": half size, 16-pixel tiles - the R1 layout, kept). The view is 320 x 176: plat_present_scroll(pal, scroll_y, scroll_x, 176) shows canvas rows
  *   scroll_y .. scroll_y + 175 from column scroll_x, then the 24 panel lines.
@@ -77,19 +78,33 @@ void yt_rect_log(int on);
 int  yt_rect_count(void);
 void yt_rect(int i, int *x, int *y, int *w, int *h);
 /* R5, kept pictures (the clouds - game.c clouds_draw): yt_keep(1) draws sprites WITHOUT marking
- * their cells, into the whole canvas (view + the canvas around it), so they stay in this
- * buffer's canvas until the caller marks them away again (yt_mark_view_rect); yt_keep_box cuts
- * them to a smaller box (view pixels). yt_watch notes the dirty matrix under a view rectangle
- * (the canvas cell numbers into ids) before yt_layers; yt_watch_changed afterwards sets
- * cells[id] for each of them the tiler drew and returns how many. yt_cell_box: a canvas cell's
- * top-left in view pixels. YT_CELLS: canvas cell numbers are below it. */
-#define YT_CELLS ((YT_PITCH / YT_TILE) * (YT_ROWS / YT_TILE + 1))
+ * them in the record, into the whole kept area (the view + the canvas around it), so they stay
+ * in this buffer's canvas until the caller marks them away again (yt_mark_view_rect); yt_keep_box
+ * cuts them to a smaller box (view pixels). yt_watch notes the record under a view rectangle
+ * (R10: band numbers - 8 lines of a 16-pixel column - into ids) before yt_layers;
+ * yt_watch_changed afterwards sets cells[id] for each band the tiler drew and returns how many.
+ * yt_cell_box: a band's box in view pixels; yt_cell_tile: the world tile it belongs to.
+ * YT_CELLS: band numbers are below it. */
+#define YT_CELLS ((YT_PITCH / YT_TILE) * (YT_ROWS / 8))
 void yt_keep(int on);
 void yt_keep_box(int vx, int vy, int w, int h);
 void yt_mark_view_rect(int vx, int vy, int w, int h);
 int  yt_watch(int vx, int vy, int w, int h, int16_t *ids, int16_t *vals, int max);
 int  yt_watch_changed(const int16_t *ids, const int16_t *vals, int n, uint8_t *cells);
-void yt_cell_box(int id, int *vx, int *vy);
+void yt_cell_box(int id, int *vx, int *vy, int *w, int *h);
+void yt_cell_tile(int id, int *tx, int *ty);
+/* R10: the world tiles the canvas holds (tx0, ty0, nx x ny); the view's start in the canvas */
+void yt_canvas_tiles(int *tx0, int *ty0, int *nx, int *ny);
+int  yt_window_x(void);
+/* R10: this buffer's pixel epoch - changes when its pixels stopped standing where the world
+ * says (a new level / scroll way, or a re-anchor that left them in place): kept pictures must
+ * be drawn again whole, without marking where they were */
+unsigned yt_epoch(void);
+/* R10, OPTIONS - SCROLL: 1 RING (up / down never moves the canvas), 0 CLASSIC; takes effect at the
+ * next frame (both buffers draw everything once). yt_full_frame(1): this frame draws the whole
+ * view itself (BACKGROUND MOVES) - a re-anchor then never moves the canvas. */
+void yt_set_ring(int on);
+void yt_full_frame(int on);
 /* a word of the dirty matrix's tile-map id (forces a full redraw of both buffers) */
 void yt_invalidate(void);
 

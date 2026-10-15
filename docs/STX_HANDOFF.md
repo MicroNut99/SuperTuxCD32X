@@ -198,10 +198,18 @@ The splash, music levels, the menus and extras of the other ports, options from 
 - Next: read S from the console. S climbing -> the pad's way (port / Sub-CPU: CMD 48 at 60 Hz);
   S 0 -> look at the game side again.
 
+## R10 - ring, own record (docs/R10_NOTES.md)
+
+- R9 on the console: pad fine (S 0); SMOOTH better; "background doesn't keep up" sometimes.
+- yt_layers.c rewritten round a per-buffer record of 8-line bands in SDRAM (Vic's dirty matrix
+  no longer used); OPTIONS - SCROLL RING (canvas line = world line % 200, no up/down re-anchor)
+  / CLASSIC; per-buffer free sideways anchor (early 3-cell shifts on quiet frames); leave-in-place
+  re-anchor keeps the record. yt_epoch / kept flags / drawn flags for the clouds.
+- Fixed: diagonal move half order (R4-R9 strip). PC: ST_TRUTH=1 (reference), ST_CLASSIC=1.
+
 ## Next
 
-1. R4/R5 on the console: the timing line on a run to the right (the 64-px dips), on a snowy
-   and a cloud level (N, F), and Background MOVES on a few levels (F, the extra read).
+1. R10 on the console: RING vs CLASSIC while jumping; the sideways catches; clouds.
 2. The platform's frame pacing (port/plat_mars.c OJ32X_PACE, median of 16) holds fast frames
    back when about half run long; a compile switch, but port/ stays as proven unless the user
    asks.

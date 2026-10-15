@@ -297,9 +297,11 @@ void level_mark_animated(int cx, int cy)
 	if (!any) return;
 	/* the whole canvas (view + the columns / lines around it): a cell kept outside the view
 	 * with an old frame would come into view with it */
-	const int tx0 = (cx - cx % YT_SCROLL_X) / YT_TILE, ty0 = (cy - cy % YT_SCROLL_Y) / YT_TILE;
-	for (int ty = ty0; ty < ty0 + YT_ROWS / YT_TILE && ty < lh; ty++)
-		for (int tx = tx0; tx < tx0 + YT_PITCH / YT_TILE && tx < lw; tx++)
+	int tx0, ty0, nx, ny;
+	yt_canvas_tiles(&tx0, &ty0, &nx, &ny);
+	(void)cx; (void)cy;
+	for (int ty = ty0; ty < ty0 + ny && ty < lh; ty++)
+		for (int tx = tx0; tx < tx0 + nx && tx < lw; tx++)
 		{
 			const uint16_t v = pic_layer[ty * lw + tx];
 			if (res_anim[v >> 2] & 2) yt_mark_tile(tx, ty);

@@ -2,7 +2,7 @@
 
 SuperTux 0.1.3 ("Milestone 1", 2004 – the classic platformer with Tux) on the **Sega CD32X**,
 drawn with Victor Luchits' **YATSSD** tile renderer on the boot, cart and Sub-CPU layers of the
-Hurrican CD32X port. **Version R9.** The whole game runs from one CD: the title with its demo
+Hurrican CD32X port. **Version R10.** The whole game runs from one CD: the title with its demo
 level, Icyisland and both Bonus Islands with their world maps, all 76 levels, every bad guy and
 power-up, CD music, PCM sound effects, saving and high scores. The levels are kept in a 4 MB RAM
 cart once they have been read from the disc.
@@ -42,7 +42,7 @@ libxmp-lite), and so are the sound effects, the pictures and the splash.
 1. The first run fetches SuperTux 0.1.3.
 2. The build converts the data, makes the splash, the sound effects and the CD tracks, checks
    the game on the PC (`host/`), builds the SH2 program, the loader and the Sub-CPU side.
-3. **Burn `cd32x/subcpu/SuperTuxR9.cue`** (with its `.bin`). It has the data track and the 12
+3. **Burn `cd32x/subcpu/SuperTuxR10.cue`** (with its `.bin`). It has the data track and the 12
    music tracks.
 
 `DATA_ONLY=1 ./build.sh` stops after the data and the PC check (no Sega toolchain needed).
@@ -137,6 +137,14 @@ the timing line counts real buffer swaps against the refresh counter. A frame no
 | H – the status panel | 7–9 ms | 1–4 ms |
 | W – waiting for the screen refresh | 0.5–6 ms | 6–9 ms |
 
+### R10
+- **Scroll: RING** (Options, on by default): the 32X's own line table wraps the picture round
+  vertically, so the view going up or down only draws the row coming in - the shifts every 16
+  lines (the catches while jumping) are gone. CLASSIC is the old way, to compare.
+- Sideways shifts: when redrawing is cheaper only the tiles that differ are drawn, and the shift
+  is done early, on a frame with time to spare.
+- Fixed: a 16-line strip of old picture when the view moved sideways and up at once (R4–R9).
+
 ### R7
 - **Jumping:** the view re-anchors every 16 lines up or down; that move was done by one SH2.
   Now both share it, and the game times moving against redrawing as it plays and uses the
@@ -204,6 +212,7 @@ console.
 | R7 | The dips while jumping (F 33-40): the view's up / down re-anchor shared by both SH2s, and the console measures whether moving the picture or drawing it again is cheaper and does that. |
 | R8 | Jumping with A: a single pad read without the button no longer cuts the jump short. The timing line shows the raw pad. |
 | R9 | Finding the stuck buttons: the timing panel counts pad replies that came back old (S); Options → Motion turns R6's smooth drawing off to compare. |
+| R10 | Options → Scroll RING: the picture wraps up and down, so the view never has to be shifted when Tux jumps; sideways shifts redraw only what differs and happen early on quiet frames; a strip of old picture (R4–R9) fixed. |
 
 ## Files
 | Path | Contents |
@@ -221,7 +230,7 @@ console.
 | `tools/stx_convert.py`, `stx_pack.py` | SuperTux 0.1.3 → the 32X's data; the disc's files and the cart layout |
 | `tools/make_stx_sfx.py`, `make_stx_splash.py`, `stx_music.sh` | sound effects, the splash, the CD tracks |
 | `tools/check_boot.py`, `check_sdram_code.py`, `where.sh` | build checks; naming the addresses on a red exception screen |
-| `docs/` | developer notes: `STX_HANDOFF.md`, `R9_NOTES.md`, `R8_NOTES.md`, `R7_NOTES.md`, `R6_NOTES.md`, `R5_NOTES.md`, `R4_NOTES.md`, `R3_NOTES.md`, `R2_NOTES.md`, `R1B_NOTES.md`, `BOOT_PATH_NOTES.md` |
+| `docs/` | developer notes: `STX_HANDOFF.md`, `R10_NOTES.md`, `R9_NOTES.md`, `R8_NOTES.md`, `R7_NOTES.md`, `R6_NOTES.md`, `R5_NOTES.md`, `R4_NOTES.md`, `R3_NOTES.md`, `R2_NOTES.md`, `R1B_NOTES.md`, `BOOT_PATH_NOTES.md` |
 
 ## Credits
 - **SuperTux** – Bill Kendrick (original author), Tobias Glaesser (project leader), Ricardo Cruz

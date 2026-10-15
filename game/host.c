@@ -15,6 +15,8 @@
  *   ST_PARALLAX  OPTIONS - BACKGROUND MOVES on (any value)
  *   ST_REANCHOR=move / draw  (R7) force the way the view re-anchors (both give the same picture)
  *   ST_TUXY=1  (R8) Tux's y and x a frame on stderr ("TY y x")
+ *   ST_TRUTH=1  (R10) every frame drawn from nothing - the reference to compare the others with
+ *   ST_CLASSIC=1  (R10) OPTIONS - SCROLL CLASSIC
  */
 #include "plat.h"
 #include "pack.h"

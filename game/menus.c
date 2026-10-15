@@ -48,7 +48,7 @@ static void save_unpack(const uint8_t *b)
 {
 	memset(slots, 0, sizeof slots);
 	if (memcmp(b, "STX2", 4)) { hs_defaults(); return; }
-	opt_music = b[4] & 1; opt_timing = b[5] & 1; opt_parallax = (b[5] >> 1) & 1; opt_smooth = !((b[5] >> 2) & 1); opt_swap = b[6] & 1;
+	opt_music = b[4] & 1; opt_timing = b[5] & 1; opt_parallax = (b[5] >> 1) & 1; opt_smooth = !((b[5] >> 2) & 1); opt_ring = !((b[5] >> 3) & 1); yt_set_ring(opt_ring); opt_swap = b[6] & 1;
 	opt_lives = b[7] >= 1 && b[7] <= 9 ? b[7] : START_LIVES;
 	for (int i = 0; i < HS_N; i++)
 	{
@@ -73,7 +73,7 @@ static void save_pack(uint8_t *b)
 {
 	memset(b, 0, SAVE_BYTES);
 	memcpy(b, "STX2", 4);
-	b[4] = (uint8_t)opt_music; b[5] = (uint8_t)(opt_timing | opt_parallax << 1 | (!opt_smooth) << 2); b[6] = (uint8_t)opt_swap; b[7] = (uint8_t)opt_lives;
+	b[4] = (uint8_t)opt_music; b[5] = (uint8_t)(opt_timing | opt_parallax << 1 | (!opt_smooth) << 2 | (!opt_ring) << 3); b[6] = (uint8_t)opt_swap; b[7] = (uint8_t)opt_lives;
 	for (int i = 0; i < HS_N; i++)
 	{
 		uint8_t *r = b + 8 + 8 * i;
@@ -430,7 +430,7 @@ static void bg_controls(void)
 
 void options_page(BgFn bg)
 {
-	enum { O_MUSIC, O_LIVES, O_TIMING, O_BUTTONS, O_BACKGROUND, O_MOTION, O_CONTROLS, O_STORY, O_SCORES, O_CREDITS, O_BACK, O_N };
+	enum { O_MUSIC, O_LIVES, O_TIMING, O_BUTTONS, O_BACKGROUND, O_MOTION, O_SCROLL, O_CONTROLS, O_STORY, O_SCORES, O_CREDITS, O_BACK, O_N };
 	int sel = 0;
 	static char rows[O_N][32];
 	static const char *items[O_N];
@@ -444,6 +444,8 @@ void options_page(BgFn bg)
 		put_str(rows[O_BACKGROUND], opt_parallax ? "BACKGROUND <MOVES>" : "BACKGROUND <FIXED>");
 		/* R9: R6's drawing between steps on / off (to compare on the console) */
 		put_str(rows[O_MOTION], opt_smooth ? "MOTION <SMOOTH>" : "MOTION <STEPS>");
+		/* R10: the canvas wrapping up / down (no re-anchor when the view goes up or down) */
+		put_str(rows[O_SCROLL], opt_ring ? "SCROLL <RING>" : "SCROLL <CLASSIC>");
 		put_str(rows[O_CONTROLS], "CONTROLS");
 		put_str(rows[O_STORY], "STORY");
 		put_str(rows[O_SCORES], "HIGH SCORES");
@@ -457,7 +459,7 @@ void options_page(BgFn bg)
 		m_lr = 0;
 		if (c < 0 || (c == O_BACK && !menu_dir)) break;
 		sel = c;
-		if (menu_dir && c > O_MOTION) continue;   /* LEFT / RIGHT only change the settings */
+		if (menu_dir && c > O_SCROLL) continue;   /* LEFT / RIGHT only change the settings */
 		switch (c)
 		{
 		case O_MUSIC: opt_music ^= 1; music_again(); break;
@@ -466,6 +468,7 @@ void options_page(BgFn bg)
 		case O_BUTTONS: opt_swap ^= 1; break;
 		case O_BACKGROUND: opt_parallax ^= 1; break;   /* from the next level read on */
 		case O_MOTION: opt_smooth ^= 1; break;
+		case O_SCROLL: opt_ring ^= 1; yt_set_ring(opt_ring); break;
 		case O_CONTROLS: page_bg = bg; message_screen(bg_controls, "ANY BUTTON: BACK", "", 0, 300, 60000); break;
 		case O_STORY: text_page("INTRO.TXT", PIC_MENU, 0); break;
 		case O_SCORES: hs_new = -1; scores_page(bg); break;
@@ -616,6 +619,7 @@ int main(int argc, char *argv[])
 	 * timing line */
 	if (getenv("ST_TIMING")) opt_timing = 1;
 	if (getenv("ST_PARALLAX")) opt_parallax = 1;
+	if (getenv("ST_CLASSIC")) { opt_ring = 0; yt_set_ring(0); }   /* R10 PC checks: SCROLL CLASSIC */
 	if (getenv("ST_LEVEL")) { for (;;) play_alone(atoi(getenv("ST_LEVEL"))); }
 	if (getenv("ST_MAP")) { for (;;) wmap_run(atoi(getenv("ST_MAP")), 0); }
 #endif

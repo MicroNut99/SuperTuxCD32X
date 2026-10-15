@@ -24,6 +24,7 @@ int cam_y;
 uint32_t game_ms, global_frame;
 int opt_music = 1, opt_timing = 0, opt_swap = 0, opt_lives = START_LIVES;
 int opt_smooth = 1;                    /* R9: OPTIONS - MOTION (R6's drawing between steps) */
+int opt_ring = 1;                      /* R10: OPTIONS - SCROLL RING (1) / CLASSIC (0) */
 int opt_parallax = 0;                  /* R4: OPTIONS - BACKGROUND MOVES */
 
 void ps_reset(void)
@@ -557,6 +558,7 @@ static void tiles_over_back(int first, int last, int cx, int cy)
  * the canvas so that a part drawn in a box lands on the same pixels as the whole cloud. */
 typedef struct { int16_t x, y, x0, y0, x1, y1; uint8_t valid; } CloudSeen;
 static CloudSeen cseen[2][NCLOUD];
+static unsigned cseen_epoch[2];        /* R10: yt_epoch when the buffer's clouds were drawn */
 static CloudSeen cnow[NCLOUD];
 static uint8_t cneed[NCLOUD];
 #define CW_MAX 40
@@ -574,8 +576,8 @@ static void clouds_reset(void)
 /* the canvas around the view, in view pixels (yt_begin: the view starts at canvas column
  * cx % 64, line cy % 16; the canvas is 384 x 192) - kept pictures are drawn into all of it */
 #define CANVAS_LINES (YT_ROWS / YT_TILE * YT_TILE)
-static int kx0(int cx) { return -(cx % YT_SCROLL_X); }
-static int ky0(int cy) { return -(cy % YT_SCROLL_Y); }
+static int kx0(int cx) { (void)cx; return -yt_window_x(); }   /* R10: the anchor is the tiler's */
+static int ky0(int cy) { return -(cy % YT_TILE); }
 
 /* after yt_begin, before yt_layers */
 static void clouds_before(int cx, int cy)
@@ -603,11 +605,12 @@ static void clouds_before(int cx, int cy)
 		n->x0 = (int16_t)(x0 + cx); n->x1 = (int16_t)(x1 + cx);
 		n->y0 = (int16_t)(y0 + cy); n->y1 = (int16_t)(y1 + cy);
 		const CloudSeen *o = &cseen[b][i];
-		cneed[i] = !o->valid || o->x != n->x || o->y != n->y || o->x0 != n->x0 || o->x1 != n->x1
+		const int same_epoch = cseen_epoch[b] == yt_epoch();
+		cneed[i] = !same_epoch || !o->valid || o->x != n->x || o->y != n->y || o->x0 != n->x0 || o->x1 != n->x1
 		           || o->y0 != n->y0 || o->y1 != n->y1;
 		/* moved: the cells it was drawn on are drawn clean (first all marks, then the watches -
 		 * a mark after a watch would hide a change from it) */
-		if (cneed[i] && o->valid)
+		if (cneed[i] && o->valid && same_epoch)
 			yt_mark_view_rect(o->x0 - cx, o->y0 - cy, o->x1 - o->x0, o->y1 - o->y0);
 	}
 	for (int i = 0; i < nparts; i++)
@@ -645,31 +648,40 @@ static void clouds_draw(int cx, int cy)
 		{
 			const int id = cw_ids[i][k];
 			if (!c_changed[id] && !c_touched[id]) continue;
-			int x, y;
-			yt_cell_box(id, &x, &y);
+			int x, y, bw, bh;
+			yt_cell_box(id, &x, &y, &bw, &bh);
 			if (x < bx0) bx0 = x;
 			if (y < by0) by0 = y;
-			if (x + YT_TILE > bx1) bx1 = x + YT_TILE;
-			if (y + YT_TILE > by1) by1 = y + YT_TILE;
+			if (x + bw > bx1) bx1 = x + bw;
+			if (y + bh > by1) by1 = y + bh;
 		}
 		if (bx1 <= bx0) continue;
 		yt_keep_box(bx0, by0, bx1 - bx0, by1 - by0);
 		yt_sprite(c_vx[i], c_vy[i], w, h, px);
 		for (int k = 0; k < cw_n[i]; k++)            /* every cell of it inside the box */
 		{
-			int x, y;
-			yt_cell_box(cw_ids[i][k], &x, &y);
+			int x, y, bw, bh;
+			yt_cell_box(cw_ids[i][k], &x, &y, &bw, &bh);
 			if (x >= bx0 && x < bx1 && y >= by0 && y < by1) c_touched[cw_ids[i][k]] = 1;
 		}
 	}
-	/* the level's tiles over every cell that got cloud pixels (tile_draw: a whole cell) */
+	/* the level's tiles over every cell that got cloud pixels (tile_draw: a whole cell; R10: the
+	 * record is in 8-line bands, two a cell - each cell once) */
 	yt_keep(1);
-	const int ctx = YT_PITCH / YT_TILE;
-	const int tx0 = (cx + kx0(cx)) / YT_TILE, ty0 = (cy + ky0(cy)) / YT_TILE;   /* canvas cell 0 */
+	static uint8_t tile_done[(YT_PITCH / YT_TILE) * (YT_VIEW_H / YT_TILE + 4)];
+	memset(tile_done, 0, sizeof tile_done);
+	int ctx0, cty0, cnx, cny;
+	yt_canvas_tiles(&ctx0, &cty0, &cnx, &cny);
+	cty0 -= 1;                         /* the kept area starts up to a cell above the view */
 	for (int id = 0; id < YT_CELLS; id++)
 	{
 		if (!c_touched[id]) continue;
-		const int tx = tx0 + id % ctx, ty = ty0 + id / ctx;
+		int tx, ty;
+		yt_cell_tile(id, &tx, &ty);
+		const int ox = tx - ctx0, oy = ty - cty0;
+		if (ox < 0 || oy < 0 || ox >= cnx || oy >= YT_VIEW_H / YT_TILE + 4) continue;
+		if (tile_done[oy * cnx + ox]) continue;
+		tile_done[oy * cnx + ox] = 1;
 		for (int l = 1; l <= 3; l++)
 		{
 			const int t = level_tile(l, tx, ty);
@@ -678,6 +690,7 @@ static void clouds_draw(int cx, int cy)
 	}
 	yt_keep(0);
 	for (int i = 0; i < nparts; i++) cseen[b][i] = cnow[i];
+	cseen_epoch[b] = yt_epoch();
 }
 
 static uint32_t stat_cells;            /* the cells the tiler drew this frame (N) */
@@ -729,6 +742,10 @@ static void draw_world_now(void)
 		yt_invalidate();                 /* the canvas holds the other kind of picture */
 		drew_parallax = parallax;
 	}
+	yt_full_frame(parallax);           /* R10: BACKGROUND MOVES draws the whole view: never move */
+#ifndef OJ32X_MARS
+	if (getenv("ST_TRUTH")) yt_invalidate();   /* PC: every frame drawn from nothing - the reference */
+#endif
 	yt_begin(cx, cy);
 	if (parallax)
 	{
